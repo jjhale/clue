@@ -1,6 +1,7 @@
 import csv
+from collections import defaultdict
 from typing import List, Dict, Tuple, Iterator
-import networkx as nx
+
 
 def load_map(filename="map49.csv"):
     with open(filename, newline='') as csv_file:
@@ -12,26 +13,8 @@ def load_map(filename="map49.csv"):
     return grid
 
 
-def print_grid(grid: List[List[str]]):
-    symbols : Dict[str, str] = {
-        "0": "\u2588",  # filled in block
-        "1": "\u2B1A", #""\u2591",  # Light shade block
-        "dn": "\u2594",  # Upper 1/8th
-        "de": "\u2595",  # Right 1/8th
-        "ds": "\u2581",  # Lower 1/8
-        "dw": "\u258F",  # Left 1/8 block
-        "": " "
-    }
-
-    symbols_2: Dict[str, str] = {
-        "0": "\u2588\u2588",  # filled in block
-        "1": "[]",  # ""\u2591",  # Light shade block
-        "dn": "\u2594\u2594",  # Upper 1/8th
-        "de": "\u2595\u2595",  # Right 1/8th
-        "ds": "\u2581\u2581",  # Lower 1/8
-        "dw": "\u258F\u258F",  # Left 1/8 block
-        "": "  "
-    }
+def print_grid(grid: List[List[str]],
+               overlay: Dict[Tuple[int, int], str] | None = None):
     symbols_3: Dict[str, str] = {
         "0": "\u2588\u2588\u2588",  # filled in block
         "1": "[ ]",  # ""\u2591",  # Light shade block
@@ -42,16 +25,19 @@ def print_grid(grid: List[List[str]]):
         "": "   "
     }
 
+    if overlay is None:
+        overlay = {}
+
     # could get fancy here
     #  https://www.fileformat.info/info/unicode/block/box_drawing/utf8test.htm
 
-    for row in grid:
+    for i, row in enumerate(grid):
         print()
-        for col in row:
-            key : str
+        for j, col in enumerate(row):
+            key: str
             if col == "":
                 key = ""
-            elif col in ["0","1"]:
+            elif col in ["0", "1"]:
                 key = str(col)
             elif col[0] == "d":
                 key = col[:2]
@@ -59,152 +45,113 @@ def print_grid(grid: List[List[str]]):
                 key = "1"
             else:
                 key = ""
-            print(symbols_3[key], end="")
+
+            if (i, j) in overlay:
+                cell = symbols_3[key][0] + overlay[(i, j)] + symbols_3[key][2]
+            else:
+                cell = symbols_3[key]
+            print(cell, end="")
     print()
 
 
-# def parse_map_grid(grid: List[List[str]]) -> Tuple[
-#                                              nx.Graph,
-# Dict[str, int],
-# Dict[Tuple[int, int], str],
-# Dict[Tuple[int, int], Tuple[int, int]]]:
-#     # iterate over the grid considering two neighbors
-#     #              (i-1,j)
-#     #                  |
-#     #                  ?
-#     #                  |
-#     #   (i, j-1) -?- (i,j)
-#     # The grid should have an empty border around it so can just
-#     # handle up to the n-1th element.
-#     # where the i is the row and the j is the column.
-#     # We are using an origin at the top left of the board.
-#     #
-#     # This should return the graph of the board which should
-#     # be used to calculate movement options.
-#
-#     graph = nx.Graph()
-#
-#     num_locations = len(location_index)
-#
-#     # Each location becomes a node in the graph
-#     graph.add_nodes_from(range(num_locations))
-#
-#     # Connect the squares
-#     for loc in range(num_doors, num_locations):
-#         i,j = node_id = location_index[loc]
-#         # look to the left:
-#         if is_a_square(grid[i][j-1]):
-#             left_node = location_map[(i, j - 1)]
-#             graph.add_edge( loc, left_node)
-#
-#         # Look above
-#         if is_a_square(grid[i-1][j]):
-#             node_above = location_map[(i-1,j)]
-#             graph.add_edge(loc, node_above)
-#
-#     # So graph now has all the boxes on the board connected.
-#     # Now need to connect the rooms?
-#     for loc in range(num_doors):
-#         door = door_data[loc]
-#         i,j = location_index[loc]
-#         direction = door[1]
-#         connecting_square : Tuple[int,int]
-#         if direction == "n":
-#             connecting_square = i-1, j
-#         elif direction == "e":
-#             connecting_square = i, j+1
-#         elif direction == "s":
-#             connecting_square = i+1, j
-#         else:  # direction == "w":
-#             connecting_square = i, j-1
-#
-#         graph.add_edge(loc, location_map[connecting_square])
-#
-#     # secret passages (only works if there is one door per room)
-#     corner_rooms = ("lounge", "conservatory","study", "kitchen")
-#     corner_doors = {
-#         door_name[3:]:door_pos
-#             for door_pos, door_name in enumerate(door_data)
-#             if door_name[3:] in corner_rooms
-#     }
-#     secret_passages : Dict[int, int] = {
-#         corner_doors["lounge"]:corner_doors["conservatory"],
-#         corner_doors["conservatory"]:corner_doors["lounge"],
-#         corner_doors["study"]: corner_doors["kitchen"],
-#         corner_doors["kitchen"]: corner_doors["study"],
-#     }
-#
-#     starting_points_by_index = {person:location_map[pos] for person, pos in starting_points.items()}
-#
-#     return graph, starting_points_by_index, location_index, location_map, door_data, secret_passages
+from dataclasses import dataclass
+
+
+@dataclass
+class Square:
+    """Class for keeping track of the properties of a square."""
+    i: int
+    j: int
+    room: str | None
+    connected_squares: List[int]  # index of connected squares.
+
+
+@dataclass
+class DoorData:
+    """Class for keeping track of the properties of a square."""
+    direction: str
+    room: str
+
 
 class Board:
     def __init__(self, map_csv: str):
         self.grid = load_map(map_csv)
 
         # parse_map_grid will fill in these variables
-        self.starting_points: Dict[str, int] = {}
-        self.door_data: List[str] = []
-        self.location_index: List[Tuple[int, int]] = []
+        self.starting_points: Dict[str, Square] = {}
+        self.door_data: List[DoorData] = []
+        self.locations: List[Square] = []
+
+        self.room_to_doors: Dict[str, List[int]] = defaultdict(list)
 
         self.build_locations(self.grid)
 
         self.num_doors: int = len(self.door_data)
-        self.num_positions : int = len(self.location_index)
-        self.location_map = {pos: i for i, pos in enumerate(self.location_index)}
+        self.num_positions: int = len(self.locations)
+        self.location_map = {
+            (square.i, square.j): idx
+            for idx, square in enumerate(self.locations)
+        }
 
         self.secret_passages: Dict[int, int] = self.build_secret_passages()
 
         # Now we do the graph stuff
-        self.graph = self.build_graph()
+        self.populate_connected_squares()
 
         # Build the subgraphs for each
-
-
-        self.player_positions = self.starting_points.copy()
+        self.player_positions_initial = {
+            player: self.location_map[(square.i, square.j)]
+            for player, square in self.starting_points.items()
+        }
+        self.player_positions = self.player_positions_initial.copy()
 
     @staticmethod
     def _is_a_square(code: str):
         return code == "1" or code.startswith("s")
 
-    def build_locations(self, grid:List[List[str]]):
-        starting_points: Dict[str, Tuple[int, int]] = {}
-        square_locations: List[Tuple[int, int]] = []
-        location_index: List[Tuple[int, int]]
+    def build_locations(self, grid: List[List[str]]):
+        square_locations: List[Square] = []
+        location_index: List[Square]
 
         for i in range(1, len(grid)):
             for j in range(1, len(grid[0])):
-                node_id = (i, j)
                 if grid[i][j] == "":
                     continue
 
                 # is it a door?
                 if grid[i][j].startswith("d"):
-                    self.location_index.append(node_id)
-                    self.door_data.append(grid[i][j])
-                if grid[i][j].startswith("s"):
-                    starting_points[grid[i][j]] = (i, j)
+                    # put the doors at the start of the location list
+                    self.locations.append(Square(
+                        i=i, j=j, room=grid[i][j], connected_squares=[]
+                    ))
+                    # format of door name == "d[nsew]:(.*)"
+                    door_datum = DoorData(direction=grid[i][j][1], room=grid[i][j][3:])
+                    self.door_data.append(door_datum)
 
-                if Board._is_a_square(grid[i][j]):
-                    square_locations.append(node_id)
+                    self.room_to_doors[door_datum.room].append(len(self.locations) - 1)
 
-        self.num_doors = len(self.location_index)
+                elif grid[i][j].startswith("s"):
+                    square = Square(i=i, j=j, room=None, connected_squares=[])
+                    square_locations.append(square)
+                    self.starting_points[grid[i][j]] = square
+
+                elif grid[i][j] == "1":
+                    square_locations.append(
+                        Square(i=i, j=j, room=None, connected_squares=[])
+                    )
+
+        self.num_doors = len(self.locations)
         # first entries and the door locations, followed by the
         #  locations of the squares.
+        self.locations.extend(square_locations)
 
-        self.location_index.extend(square_locations)
-        self.starting_points = {
-            person:self.location_map[pos]
-            for person, pos in starting_points.items()
-        }
-
-    def build_secret_passages(self)->Dict[int,int]:
+    def build_secret_passages(self) -> Dict[int, int]:
         # secret passages (only works if there is one door per room)
         corner_rooms = ("lounge", "conservatory", "study", "kitchen")
         corner_doors = {
-            door_name[3:]: door_pos
-            for door_pos, door_name in enumerate(self.door_data)
-            if door_name[3:] in corner_rooms
+            dd.room: door_pos
+            for door_pos, dd in enumerate(self.door_data)
+            if dd.room in corner_rooms
         }
         return {
             corner_doors["lounge"]: corner_doors["conservatory"],
@@ -213,33 +160,33 @@ class Board:
             corner_doors["kitchen"]: corner_doors["study"],
         }
 
-    def build_graph(self) -> nx.Graph:
-        graph = nx.Graph()
+    def populate_connected_squares(self) -> None:
+        num_locations = len(self.locations)
 
-        num_locations = len(self.location_index)
-
-        # Each location becomes a node in the graph
-        graph.add_nodes_from(range(num_locations))
-
-        # Connect the squares
-        for loc in range(self.num_doors, num_locations):
-            i, j = node_id = self.location_index[loc]
+        # Connect the squares (excluding the doors)
+        for idx in range(self.num_doors, num_locations):
+            square = self.locations[idx]
+            i = square.i
+            j = square.j
             # look to the left:
-            if Board._is_a_square(grid[i][j - 1]):
-                left_node = self.location_map[(i, j - 1)]
-                graph.add_edge(loc, left_node)
+            if Board._is_a_square(self.grid[i][j - 1]):
+                left_square_idx = self.location_map[(i, j - 1)]
+                square.connected_squares.append(left_square_idx)
+                self.locations[left_square_idx].connected_squares.append(idx)
 
             # Look above
-            if Board._is_a_square(grid[i - 1][j]):
-                node_above = self.location_map[(i - 1, j)]
-                graph.add_edge(loc, node_above)
+            if Board._is_a_square(self.grid[i - 1][j]):
+                square_above_idx = self.location_map[(i - 1, j)]
+                square.connected_squares.append(square_above_idx)
+                self.locations[square_above_idx].connected_squares.append(idx)
 
         # So graph now has all the boxes on the board connected.
         # Now need to connect the rooms?
-        for loc in range(self.num_doors):
-            door = self.door_data[loc]
-            i, j = self.location_index[loc]
-            direction = door[1]
+        for idx in range(self.num_doors):
+            door = self.locations[idx]
+            i = door.i
+            j = door.j
+            direction = self.door_data[idx].direction
             connecting_square: Tuple[int, int]
             if direction == "n":
                 connecting_square = i - 1, j
@@ -250,19 +197,12 @@ class Board:
             else:  # direction == "w":
                 connecting_square = i, j - 1
 
-            graph.add_edge(loc, self.location_map[connecting_square])
+            connecting_square_idx = self.location_map[connecting_square]
+            door.connected_squares.append(connecting_square_idx)
+            self.locations[connecting_square_idx].connected_squares.append(idx)
 
-        return graph
-
-    def build_subgraphs(self)->List[nx.Graph]:
-        lengths : Iterator[Tuple[int, Dict[int,int]]] = nx.all_pairs_shortest_path_length(self.graph, cutoff=6)
-        # make the dict:
-        empty_graph = nx.Graph()
-        subgraphs : List[nx.Graph] = ...
-
-    def legal_positions(self, graph: nx.Graph,
+    def legal_positions(self,
                         initial_position: int,
-                        other_player_positions: List[Tuple[int, int]],
                         throw: int) -> List[bool]:
         legal_positions = [False] * self.num_positions
 
@@ -270,28 +210,74 @@ class Board:
         if initial_position in self.secret_passages:
             legal_positions[self.secret_passages[initial_position]] = True
 
-        # The locations of other players outside of rooms.
-        blocked_locations = [
-            v
-            for v in self.player_positions.values()
-            if v >= self.num_doors and v != initial_position
-        ]
+        # If we are in a room we can leave from either door:
+        starting_points = []
+        blocked_doors = []  # you may not exit and enter same room in a turn
+        if initial_position < self.num_doors:
+            starting_points = self.room_to_doors[self.door_data[initial_position].room]
+            blocked_doors = starting_points
+        else:
+            starting_points = [initial_position]
 
-        # make the subgraph of things that are upto dice throw away:
-        subgraph = nx.generators.ego_graph(graph,
-                                           initial_position,
-                                           radius=throw,
-                                           undirected=True)
+        for starting_point in starting_points:
+            # init the squares you can't go thru
+            visited = [False] * self.num_positions
+            for door in blocked_doors:
+                visited[door] = True
 
+            for idx in self.player_positions.values():
+                if idx >= self.num_doors:
+                    visited[idx] = True
 
+            self.follow_path(
+                starting_point=starting_point,
+                current_position=starting_point,
+                legal_positions=legal_positions,
+                visited=visited,
+                distance=throw,
+            )
 
+        return legal_positions
 
+    def follow_path(
+            self,
+            starting_point: int,
+            current_position: int,
+            legal_positions: List[bool],
+            visited: List[bool],
+            distance: int,
+    ) -> None:
+        # Need the starting point so that we don't get stuck in a room.
+        if distance == 0 or (starting_point != current_position and self.locations[
+            current_position].room):
+            # we have reached the end of the path by running out of steps
+            #  or by finding a door.
+            legal_positions[current_position] = True
+            return
 
+        # mark our position as visited
+        visited[current_position] = True
+
+        # see if we can visit any neighbours
+        for next_idx in self.locations[current_position].connected_squares:
+            if not visited[next_idx]:
+                self.follow_path(starting_point, next_idx, legal_positions, visited,
+                                 distance - 1)
+
+        # Unmark current location as visited
+        visited[current_position] = False
 
 
 if __name__ == "__main__":
-    grid = load_map()
-    print_grid(grid)
+    board = Board("map49.csv")
+    initial_pos = 0
+    legal_positions = board.legal_positions(initial_position=initial_pos, throw=6)
 
+    initial_overlay = {
+        (board.locations[initial_pos].i, board.locations[initial_pos].j): "S"}
+    legal_overlay = {
+        (board.locations[i].i, board.locations[i].j): "e"
+        for i, legal in enumerate(legal_positions) if legal
+    }
 
-
+    print_grid(board.grid, {**legal_overlay, **initial_overlay})
