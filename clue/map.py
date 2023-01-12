@@ -1,10 +1,11 @@
 import csv
 from collections import defaultdict
-from typing import List, Dict, Tuple, Iterator
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
 
 
 def load_map(filename="map49.csv"):
-    with open(filename, newline='') as csv_file:
+    with open(filename, newline="") as csv_file:
         reader = csv.reader(csv_file)
         grid: List[List[str]] = []
         for row in reader:
@@ -13,8 +14,9 @@ def load_map(filename="map49.csv"):
     return grid
 
 
-def print_grid(grid: List[List[str]],
-               overlay: Dict[Tuple[int, int], str] | None = None):
+def print_grid(
+    grid: List[List[str]], overlay: Dict[Tuple[int, int], str] | None = None
+):
     symbols_3: Dict[str, str] = {
         "0": "\u2588\u2588\u2588",  # filled in block
         "1": "[ ]",  # ""\u2591",  # Light shade block
@@ -22,7 +24,7 @@ def print_grid(grid: List[List[str]],
         "de": "  \u2590",  # Right 1/8th
         "ds": "\u2582\u2582\u2582",  # Lower 1/8
         "dw": "\u258C  ",  # Left 1/8 block
-        "": "   "
+        "": "   ",
     }
 
     if overlay is None:
@@ -54,12 +56,10 @@ def print_grid(grid: List[List[str]],
     print()
 
 
-from dataclasses import dataclass
-
-
 @dataclass
 class Square:
     """Class for keeping track of the properties of a square."""
+
     i: int
     j: int
     room: str | None
@@ -69,6 +69,7 @@ class Square:
 @dataclass
 class DoorData:
     """Class for keeping track of the properties of a square."""
+
     direction: str
     room: str
 
@@ -89,8 +90,7 @@ class Board:
         self.num_doors: int = len(self.door_data)
         self.num_positions: int = len(self.locations)
         self.location_map = {
-            (square.i, square.j): idx
-            for idx, square in enumerate(self.locations)
+            (square.i, square.j): idx for idx, square in enumerate(self.locations)
         }
 
         self.secret_passages: Dict[int, int] = self.build_secret_passages()
@@ -121,9 +121,9 @@ class Board:
                 # is it a door?
                 if grid[i][j].startswith("d"):
                     # put the doors at the start of the location list
-                    self.locations.append(Square(
-                        i=i, j=j, room=grid[i][j], connected_squares=[]
-                    ))
+                    self.locations.append(
+                        Square(i=i, j=j, room=grid[i][j], connected_squares=[])
+                    )
                     # format of door name == "d[nsew]:(.*)"
                     door_datum = DoorData(direction=grid[i][j][1], room=grid[i][j][3:])
                     self.door_data.append(door_datum)
@@ -201,9 +201,7 @@ class Board:
             door.connected_squares.append(connecting_square_idx)
             self.locations[connecting_square_idx].connected_squares.append(idx)
 
-    def legal_positions(self,
-                        initial_position: int,
-                        throw: int) -> List[bool]:
+    def legal_positions(self, initial_position: int, throw: int) -> List[bool]:
         legal_positions = [False] * self.num_positions
 
         # Can take secret passages
@@ -240,16 +238,17 @@ class Board:
         return legal_positions
 
     def follow_path(
-            self,
-            starting_point: int,
-            current_position: int,
-            legal_positions: List[bool],
-            visited: List[bool],
-            distance: int,
+        self,
+        starting_point: int,
+        current_position: int,
+        legal_positions: List[bool],
+        visited: List[bool],
+        distance: int,
     ) -> None:
         # Need the starting point so that we don't get stuck in a room.
-        if distance == 0 or (starting_point != current_position and self.locations[
-            current_position].room):
+        if distance == 0 or (
+            starting_point != current_position and self.locations[current_position].room
+        ):
             # we have reached the end of the path by running out of steps
             #  or by finding a door.
             legal_positions[current_position] = True
@@ -261,8 +260,9 @@ class Board:
         # see if we can visit any neighbours
         for next_idx in self.locations[current_position].connected_squares:
             if not visited[next_idx]:
-                self.follow_path(starting_point, next_idx, legal_positions, visited,
-                                 distance - 1)
+                self.follow_path(
+                    starting_point, next_idx, legal_positions, visited, distance - 1
+                )
 
         # Unmark current location as visited
         visited[current_position] = False
@@ -274,10 +274,12 @@ if __name__ == "__main__":
     legal_positions = board.legal_positions(initial_position=initial_pos, throw=6)
 
     initial_overlay = {
-        (board.locations[initial_pos].i, board.locations[initial_pos].j): "S"}
+        (board.locations[initial_pos].i, board.locations[initial_pos].j): "S"
+    }
     legal_overlay = {
         (board.locations[i].i, board.locations[i].j): "e"
-        for i, legal in enumerate(legal_positions) if legal
+        for i, legal in enumerate(legal_positions)
+        if legal
     }
 
     print_grid(board.grid, {**legal_overlay, **initial_overlay})

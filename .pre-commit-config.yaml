@@ -1,0 +1,41 @@
+# .pre-commit-config.yaml
+repos: # hooks for everything
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.0.1
+    hooks:
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  # isort for auto-sorting imports in .py files
+  - repo: https://github.com/pycqa/isort
+    rev: 5.10.1
+    hooks:
+      - id: isort
+        name: isort (python)
+        args: ["--profile", "black"]
+
+  # black for auto-formatting .py files
+  - repo: https://github.com/psf/black
+    rev: 22.3.0
+    hooks:
+      - id: black
+
+  # flake8 for linting
+  - repo: https://github.com/PyCQA/flake8
+    rev: 4.0.1
+    hooks:
+      - id: flake8
+        args:
+          # black compat: https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html?highlight=flake8
+          - "--max-line-length=88"
+          # errors that will be ignored by flake8. see:
+          # black compat
+          - "--ignore=E203,W503"
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v0.960
+    hooks:
+      - id: mypy
