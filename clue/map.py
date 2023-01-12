@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 
-def load_map(filename="map49.csv"):
+def load_map(filename: str = "map49.csv") -> List[List[str]]:
     with open(filename, newline="") as csv_file:
         reader = csv.reader(csv_file)
         grid: List[List[str]] = []
@@ -16,7 +16,7 @@ def load_map(filename="map49.csv"):
 
 def print_grid(
     grid: List[List[str]], overlay: Dict[Tuple[int, int], str] | None = None
-):
+) -> None:
     symbols_3: Dict[str, str] = {
         "0": "\u2588\u2588\u2588",  # filled in block
         "1": "[ ]",  # ""\u2591",  # Light shade block
@@ -106,10 +106,10 @@ class Board:
         self.player_positions = self.player_positions_initial.copy()
 
     @staticmethod
-    def _is_a_square(code: str):
+    def _is_a_square(code: str) -> bool:
         return code == "1" or code.startswith("s")
 
-    def build_locations(self, grid: List[List[str]]):
+    def build_locations(self, grid: List[List[str]]) -> None:
         square_locations: List[Square] = []
         location_index: List[Square]
 
