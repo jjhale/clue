@@ -1,6 +1,6 @@
 # Map
 
-A csv file represents the board layout. 
+A csv file represents the board layout.
 
 Key:
  - `""` - part of a room
@@ -12,3 +12,10 @@ Key:
  - s[a-z]{1,2} - the starting point of a player
  - [A-Z].* - The name of a room
 
+
+
+# Precommit setup
+Install the git hooks:
+```shell
+poetry run pre-commit install
+```
