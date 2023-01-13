@@ -1,12 +1,11 @@
 import random
-from dataclasses import dataclass
 from enum import Enum
-from typing import List, Tuple, Dict
+from typing import Dict, List
 
 import numpy as np
 
-from clue.cards import PEOPLE_CARDS, WEAPON_CARDS, ROOM_CARDS, Envelope, DECK
-from clue.map import Board, STARTING_POINT_TO_PLAYER_CARD
+from clue.cards import DECK, PEOPLE_CARDS, ROOM_CARDS, WEAPON_CARDS, Envelope
+from clue.map import Board
 
 
 class StepKind(Enum):
@@ -27,45 +26,51 @@ class CardState:
         self.players: List[int] = []
         self.active_players = np.zeros(CardState.MAX_PLAYERS, dtype=np.int8)
 
-        self.envelope: Envelope = Envelope(PEOPLE_CARDS[0], WEAPON_CARDS[0], ROOM_CARDS[0])
+        self.envelope: Envelope = Envelope(
+            PEOPLE_CARDS[0], WEAPON_CARDS[0], ROOM_CARDS[0]
+        )
 
         # The card knowledge of each player
         self.player_card_knowledge = np.zeros(
-            (CardState.MAX_PLAYERS, CardState.MAX_PLAYERS, len(DECK)),
-            dtype=np.int8
+            (CardState.MAX_PLAYERS, CardState.MAX_PLAYERS, len(DECK)), dtype=np.int8
         )
 
         # History of the suggestions by player
         self.suggestions = np.zeros(
-            (CardState.MAX_PLAYERS,
-             len(ROOM_CARDS),
-             len(PEOPLE_CARDS),
-             len(WEAPON_CARDS),
+            (
+                CardState.MAX_PLAYERS,
+                len(ROOM_CARDS),
+                len(PEOPLE_CARDS),
+                len(WEAPON_CARDS),
             ),
-            dtype=np.int8)
+            dtype=np.int8,
+        )
 
         # most recent suggestion (so a player can choose how to prove false)
-        self.last_suggestion = np.zeros(len(DECK),dtype=np.int8)
-        self.last_suggestion_player = np.zeros(CardState.MAX_PLAYERS,dtype=np.int8)
-
+        self.last_suggestion = np.zeros(len(DECK), dtype=np.int8)
+        self.last_suggestion_player = np.zeros(CardState.MAX_PLAYERS, dtype=np.int8)
 
         # After a suggestion is made a player publicly proves it false
         self.did_prove_false = np.zeros(
-            (CardState.MAX_PLAYERS,
-             len(ROOM_CARDS),
-             len(PEOPLE_CARDS),
-             len(WEAPON_CARDS),
-             ),
-            dtype=np.int8)
+            (
+                CardState.MAX_PLAYERS,
+                len(ROOM_CARDS),
+                len(PEOPLE_CARDS),
+                len(WEAPON_CARDS),
+            ),
+            dtype=np.int8,
+        )
 
         # Failed to prove false - when a player is unable to prove a suggestion false
         self.didnt_prove_false = np.zeros(
-            (CardState.MAX_PLAYERS,
-             len(ROOM_CARDS),
-             len(PEOPLE_CARDS),
-             len(WEAPON_CARDS),
-             ),
-            dtype=np.int8)
+            (
+                CardState.MAX_PLAYERS,
+                len(ROOM_CARDS),
+                len(PEOPLE_CARDS),
+                len(WEAPON_CARDS),
+            ),
+            dtype=np.int8,
+        )
 
         #
         self.current_player = 0
@@ -74,18 +79,18 @@ class CardState:
         self.who_am_i = np.identity(self.MAX_PLAYERS, dtype=np.int8)
         self.current_step_kind_matrix = np.identity(len(StepKind), dtype=np.int8)
         self.player_position_matrix = np.zeros(
-            (self.MAX_PLAYERS, self.board.num_positions),
-            dtype=np.int8)
-
-
+            (self.MAX_PLAYERS, self.board.num_positions), dtype=np.int8
+        )
 
     def new_game(self, players: List[int]) -> None:
         """Start a new game
         players - the player ids for the folks playing.
         """
         if players[0] != 0:
-            raise ValueError("Miss Scarlet was not included in the player list - she "
-                             "must be the first player! Unable to player_idx without her.")
+            raise ValueError(
+                "Miss Scarlet was not included in the player list - she "
+                "must be the first player! Unable to player_idx without her."
+            )
 
         self.players = players
         self.num_players = len(players)
@@ -97,16 +102,17 @@ class CardState:
         self.envelope = Envelope(
             person=random.choice(PEOPLE_CARDS),
             weapon=random.choice(WEAPON_CARDS),
-            room=random.choice(ROOM_CARDS)
+            room=random.choice(ROOM_CARDS),
         )
 
         # Shuffle the other cards
         remaining_cards = [
-            idx for idx in list(range(len(DECK)))
+            idx
+            for idx in list(range(len(DECK)))
             if (
-                    idx != self.envelope.person.idx and
-                    idx != self.envelope.weapon.idx and
-                    idx != self.envelope.room.idx
+                idx != self.envelope.person.idx
+                and idx != self.envelope.weapon.idx
+                and idx != self.envelope.room.idx
             )
         ]
         random.shuffle(remaining_cards)
@@ -125,7 +131,7 @@ class CardState:
         self.didnt_prove_false.fill(0)
 
         self.current_player = 0
-        self.current_step_kind = 0
+        self.current_step_kind = StepKind.MOVE
         self.current_die_roll = random.randrange(1, 6)
 
     def get_player_knowledge(self, player_idx: int) -> Dict:
@@ -147,30 +153,30 @@ class CardState:
         #  could record a sequence of 74 in the same space as we represent just the
         #  per person suggestions.
 
-
         return {
             # Public knowledge:
             "who_am_i": self.who_am_i[player_idx],  # 1x6
-            "step_kind": self.current_step_kind_matrix[self.current_step_kind.value][:],  # 1x4
+            "step_kind": self.current_step_kind_matrix[self.current_step_kind.value][
+                :
+            ],  # 1x4
             "active players": self.active_players,  # 1x6
             "player locations": self._make_player_positions(),  # 6x205 (1230)
-            "suggestions": self.suggestions, # 6x9x6x6 (2916)
-            "last_suggestion": self.last_suggestion, # 1x21
+            "suggestions": self.suggestions,  # 6x9x6x6 (2916)
+            "last_suggestion": self.last_suggestion,  # 1x21
             "last suggestion player": self.last_suggestion_player,  # 1x6
             "proved_false": self.did_prove_false,  # 6x9x6x6 (2916)
-            "not_proved_false": self.didnt_prove_false, # 6x9x6x6 (2916)
-
+            "not_proved_false": self.didnt_prove_false,  # 6x9x6x6 (2916)
             # Private knowledge:
             "card locations": self.player_card_knowledge[player_idx],  # 6x21 (126)
         }
 
-    def legal_actions(self):
+    def legal_actions(self) -> tuple:
         # Action space:
         #  - move positions: 1x205
         if self.current_step_kind == StepKind.MOVE:
             legal_positions = self.board.legal_positions(
-                player_idx=self.current_player,
-                throw=self.current_die_roll)
+                player_idx=self.current_player, throw=self.current_die_roll
+            )
         else:
             legal_positions = np.zeros(self.board.num_positions)
 
@@ -181,24 +187,30 @@ class CardState:
             suggestions_or_accusations = self._legal_accusation()
         else:
             suggestions_or_accusations = np.zeros(
-                (len(ROOM_CARDS),
-                 len(PEOPLE_CARDS),
-                 len(WEAPON_CARDS),
-                 ),
-                dtype=np.int8)
+                (
+                    len(ROOM_CARDS),
+                    len(PEOPLE_CARDS),
+                    len(WEAPON_CARDS),
+                ),
+                dtype=np.int8,
+            )
 
         # disprove suggestion
         #  choosing which card to show room, weapon or person 1x21
         legal_disprove = self._legal_disprove()
 
+        # TODO return legal actions...
+        return legal_positions, suggestions_or_accusations, legal_disprove
 
     def _legal_suggestions(self) -> np.ndarray:
         suggestion = np.zeros(
-            (len(ROOM_CARDS),
-             len(PEOPLE_CARDS),
-             len(WEAPON_CARDS),
-             ),
-            dtype=np.int8)
+            (
+                len(ROOM_CARDS),
+                len(PEOPLE_CARDS),
+                len(WEAPON_CARDS),
+            ),
+            dtype=np.int8,
+        )
 
         # Can only make a suggestion if player is in a room.
         if not self.board.is_in_room(player_idx=self.current_player):
@@ -212,7 +224,10 @@ class CardState:
         return suggestion
 
     def _legal_disprove(self) -> np.ndarray:
-        return self.last_suggestion*self.player_card_knowledge[self.current_player][self.current_player]
+        return (
+            self.last_suggestion
+            * self.player_card_knowledge[self.current_player][self.current_player]
+        )
 
     def _legal_accusation(self) -> np.ndarray:
         # Don't need to be in the room to make the accusation and so can always
@@ -223,11 +238,13 @@ class CardState:
         seen_cards = np.any(self.player_card_knowledge[self.current_player])
 
         suggestion = np.ones(
-            (len(ROOM_CARDS),
-             len(PEOPLE_CARDS),
-             len(WEAPON_CARDS),
-             ),
-            dtype=np.int8)
+            (
+                len(ROOM_CARDS),
+                len(PEOPLE_CARDS),
+                len(WEAPON_CARDS),
+            ),
+            dtype=np.int8,
+        )
 
         # Exclude any containing the seen people cards
         suggestion[:, seen_cards[0:6], :] = 0
@@ -240,7 +257,6 @@ class CardState:
 
         return suggestion
 
-
     def _make_player_positions(self) -> np.ndarray:
         self.player_position_matrix.fill(0)
 
@@ -248,27 +264,3 @@ class CardState:
             self.player_position_matrix[player_idx][pos_idx] = 1
 
         return self.player_position_matrix
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

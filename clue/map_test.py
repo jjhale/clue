@@ -1,5 +1,5 @@
 from clue.cards import PEOPLE_CARDS, ROOM_CARDS
-from clue.map import STARTING_POINT_TO_PLAYER_CARD, ROOM_NAME_TO_ROOM_INDEX
+from clue.map import ROOM_NAME_TO_ROOM_INDEX, STARTING_POINT_TO_PLAYER_CARD
 
 
 def test_starting_point_coherence() -> None:

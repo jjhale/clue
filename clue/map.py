@@ -1,18 +1,17 @@
 import csv
 from collections import defaultdict
-from typing import List, Dict, Tuple, Iterator
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
 
 import numpy as np
 
-from clue.cards import ROOM_CARDS
-
 STARTING_POINT_TO_PLAYER_CARD = {
-  "ss": "Miss Scarlet",
-  "sm": "Colonel Mustard",
-  "sw": "Mrs White",
-  "sg": "Mr Green",
-  "smp": "Mrs Peacock",
-  "spp": "Professor Plum",
+    "ss": "Miss Scarlet",
+    "sm": "Colonel Mustard",
+    "sw": "Mrs White",
+    "sg": "Mr Green",
+    "smp": "Mrs Peacock",
+    "spp": "Professor Plum",
 }
 
 ROOM_NAME_TO_ROOM_INDEX = {
@@ -26,7 +25,6 @@ ROOM_NAME_TO_ROOM_INDEX = {
     "library": 7,
     "study": 8,
 }
-
 
 
 def load_map(filename: str = "map49.csv") -> List[List[str]]:
@@ -127,17 +125,18 @@ class Board:
 
         # Location index for each player as ordered by STARTING_POINT_TO_PLAYER_CARD
         self.player_positions_initial = [
-             self.location_map[
-                (self.starting_points[start_id].i, self.starting_points[start_id].j)]
+            self.location_map[
+                (self.starting_points[start_id].i, self.starting_points[start_id].j)
+            ]
             for start_id in STARTING_POINT_TO_PLAYER_CARD
         ]
         self.player_positions = self.player_positions_initial.copy()
 
         # Pre create so that we don't need to reallocate each time.
         self._legal_positions_vector = np.zeros((self.num_positions,), dtype=np.int8)
-        self.visited = np.zeros( (self.num_positions,), dtype=np.int8)
+        self.visited = np.zeros((self.num_positions,), dtype=np.int8)
 
-    def reset_positions(self):
+    def reset_positions(self) -> None:
         self.player_positions = self.player_positions_initial.copy()
 
     @staticmethod
@@ -236,9 +235,7 @@ class Board:
             door.connected_squares.append(connecting_square_idx)
             self.locations[connecting_square_idx].connected_squares.append(idx)
 
-    def legal_positions(self,
-                        player_idx: int,
-                        throw: int) -> np.ndarray:
+    def legal_positions(self, player_idx: int, throw: int) -> np.ndarray:
 
         initial_position: int = self.player_positions[player_idx]
         # clear the legal positions
@@ -278,14 +275,15 @@ class Board:
     def is_in_room(self, player_idx: int) -> bool:
         return self.player_positions[player_idx] < self.num_doors
 
-    def which_room(self, player_idx:int) -> int:
-        return self.door_data[self.player_positions[player_idx]].room
+    def which_room(self, player_idx: int) -> int:
+        room_name = self.door_data[self.player_positions[player_idx]].room
+        return ROOM_NAME_TO_ROOM_INDEX[room_name]
 
     def follow_path(
-            self,
-            starting_point: int,
-            current_position: int,
-            distance: int,
+        self,
+        starting_point: int,
+        current_position: int,
+        distance: int,
     ) -> None:
         # Need the starting point so that we don't get stuck in a room.
         if distance == 0 or (
