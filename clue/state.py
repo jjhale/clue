@@ -23,7 +23,7 @@ class CardState:
         self.board = Board(map_csv)
         # Who has the weapons
         self.card_locations: List[int] = []
-        self.players: List[int] = []
+        self.players: List[int] = CardState.pick_players()
         self.active_players = np.zeros(CardState.MAX_PLAYERS, dtype=np.int8)
 
         self.envelope: Envelope = Envelope(
@@ -82,6 +82,19 @@ class CardState:
             (self.MAX_PLAYERS, self.board.num_positions), dtype=np.int8
         )
 
+        self.new_game(self.players)
+
+    @staticmethod
+    def pick_players() -> List[int]:
+        # You can have between 3 and 6 players:
+        num_players = random.randint(3, 6)
+
+        # Miss Scarlett always goes first, so only get to pick from the other five:
+        players = [0] + random.sample(range(1, 6), k=num_players - 1)
+        # Sort inplace
+        players.sort()
+        return players
+
     def new_game(self, players: List[int]) -> None:
         """Start a new game
         players - the player ids for the folks playing.
@@ -132,7 +145,7 @@ class CardState:
 
         self.current_player = 0
         self.current_step_kind = StepKind.MOVE
-        self.current_die_roll = random.randrange(1, 6)
+        self.current_die_roll = random.randint(1, 6)
 
     def get_player_knowledge(self, player_idx: int) -> Dict:
         # TODO: decide if we make the order consistent?
