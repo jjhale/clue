@@ -1,6 +1,6 @@
 import random
 from enum import Enum
-from typing import Dict, List
+from typing import Dict, List, cast
 
 import numpy as np
 
@@ -224,9 +224,10 @@ class CardState:
         return suggestion
 
     def _legal_disprove(self) -> np.ndarray:
-        return (
+        return cast(
+            np.ndarray,
             self.last_suggestion
-            * self.player_card_knowledge[self.current_player][self.current_player]
+            * self.player_card_knowledge[self.current_player][self.current_player],
         )
 
     def _legal_accusation(self) -> np.ndarray:
@@ -235,7 +236,9 @@ class CardState:
         #
         # Forcing it not to make any accusation
         #   which includes any cards that it has seen?
-        seen_cards = np.any(self.player_card_knowledge[self.current_player])
+        seen_cards = cast(
+            np.ndarray, np.any(self.player_card_knowledge[self.current_player])
+        )
 
         suggestion = np.ones(
             (
