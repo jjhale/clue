@@ -1,7 +1,32 @@
 import csv
 from collections import defaultdict
-from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import List, Dict, Tuple, Iterator
+
+import numpy as np
+
+from clue.cards import ROOM_CARDS
+
+STARTING_POINT_TO_PLAYER_CARD = {
+  "ss": "Miss Scarlet",
+  "sm": "Colonel Mustard",
+  "sw": "Mrs White",
+  "sg": "Mr Green",
+  "smp": "Mrs Peacock",
+  "spp": "Professor Plum",
+}
+
+ROOM_NAME_TO_ROOM_INDEX = {
+    "hall": 0,
+    "lounge": 1,
+    "dinning room": 2,
+    "kitchen": 3,
+    "ball room": 4,
+    "conservatory": 5,
+    "billiard room": 6,
+    "library": 7,
+    "study": 8,
+}
+
 
 
 def load_map(filename: str = "map49.csv") -> List[List[str]]:
@@ -87,6 +112,8 @@ class Board:
 
         self.build_locations(self.grid)
 
+        self.num_players = len(self.starting_points)
+
         self.num_doors: int = len(self.door_data)
         self.num_positions: int = len(self.locations)
         self.location_map = {
@@ -98,11 +125,19 @@ class Board:
         # Now we do the graph stuff
         self.populate_connected_squares()
 
-        # Build the subgraphs for each
-        self.player_positions_initial = {
-            player: self.location_map[(square.i, square.j)]
-            for player, square in self.starting_points.items()
-        }
+        # Location index for each player as ordered by STARTING_POINT_TO_PLAYER_CARD
+        self.player_positions_initial = [
+             self.location_map[
+                (self.starting_points[start_id].i, self.starting_points[start_id].j)]
+            for start_id in STARTING_POINT_TO_PLAYER_CARD
+        ]
+        self.player_positions = self.player_positions_initial.copy()
+
+        # Pre create so that we don't need to reallocate each time.
+        self._legal_positions_vector = np.zeros((self.num_positions,), dtype=np.int8)
+        self.visited = np.zeros( (self.num_positions,), dtype=np.int8)
+
+    def reset_positions(self):
         self.player_positions = self.player_positions_initial.copy()
 
     @staticmethod
@@ -201,12 +236,17 @@ class Board:
             door.connected_squares.append(connecting_square_idx)
             self.locations[connecting_square_idx].connected_squares.append(idx)
 
-    def legal_positions(self, initial_position: int, throw: int) -> List[bool]:
-        legal_positions = [False] * self.num_positions
+    def legal_positions(self,
+                        player_idx: int,
+                        throw: int) -> np.ndarray:
+
+        initial_position: int = self.player_positions[player_idx]
+        # clear the legal positions
+        self._legal_positions_vector.fill(0)
 
         # Can take secret passages
         if initial_position in self.secret_passages:
-            legal_positions[self.secret_passages[initial_position]] = True
+            self._legal_positions_vector[self.secret_passages[initial_position]] = 1
 
         # If we are in a room we can leave from either door:
         starting_points = []
@@ -219,31 +259,33 @@ class Board:
 
         for starting_point in starting_points:
             # init the squares you can't go thru
-            visited = [False] * self.num_positions
+            self.visited.fill(0)
             for door in blocked_doors:
-                visited[door] = True
+                self.visited[door] = 1
 
-            for idx in self.player_positions.values():
+            for idx in self.player_positions:
                 if idx >= self.num_doors:
-                    visited[idx] = True
+                    self.visited[idx] = 1
 
             self.follow_path(
                 starting_point=starting_point,
                 current_position=starting_point,
-                legal_positions=legal_positions,
-                visited=visited,
                 distance=throw,
             )
 
-        return legal_positions
+        return self._legal_positions_vector
+
+    def is_in_room(self, player_idx: int) -> bool:
+        return self.player_positions[player_idx] < self.num_doors
+
+    def which_room(self, player_idx:int) -> int:
+        return self.door_data[self.player_positions[player_idx]].room
 
     def follow_path(
-        self,
-        starting_point: int,
-        current_position: int,
-        legal_positions: List[bool],
-        visited: List[bool],
-        distance: int,
+            self,
+            starting_point: int,
+            current_position: int,
+            distance: int,
     ) -> None:
         # Need the starting point so that we don't get stuck in a room.
         if distance == 0 or (
@@ -251,28 +293,26 @@ class Board:
         ):
             # we have reached the end of the path by running out of steps
             #  or by finding a door.
-            legal_positions[current_position] = True
+            self._legal_positions_vector[current_position] = 1
             return
 
         # mark our position as visited
-        visited[current_position] = True
+        self.visited[current_position] = 1
 
         # see if we can visit any neighbours
         for next_idx in self.locations[current_position].connected_squares:
-            if not visited[next_idx]:
-                self.follow_path(
-                    starting_point, next_idx, legal_positions, visited, distance - 1
-                )
+            if not self.visited[next_idx]:
+                self.follow_path(starting_point, next_idx, distance - 1)
 
         # Unmark current location as visited
-        visited[current_position] = False
+        self.visited[current_position] = 0
 
 
 if __name__ == "__main__":
     board = Board("map49.csv")
-    initial_pos = 0
-    legal_positions = board.legal_positions(initial_position=initial_pos, throw=6)
-
+    player_idx = 0
+    legal_positions = board.legal_positions(player_idx=player_idx, throw=6)
+    initial_pos = board.player_positions[player_idx]
     initial_overlay = {
         (board.locations[initial_pos].i, board.locations[initial_pos].j): "S"
     }
@@ -283,3 +323,4 @@ if __name__ == "__main__":
     }
 
     print_grid(board.grid, {**legal_overlay, **initial_overlay})
+    print(f"Num pos: {board.num_positions}")
