@@ -7,6 +7,27 @@ import numpy as np
 from clue.cards import DECK, PEOPLE_CARDS, ROOM_CARDS, WEAPON_CARDS, Envelope
 from clue.map import Board
 
+# Alway repreresent the state of the world from the
+#  current player's point of view
+PLAYER_REMAP = (
+    (0, 1, 2, 3, 4, 5),
+    (5, 0, 1, 2, 3, 4),
+    (4, 5, 0, 1, 2, 3),
+    (3, 4, 5, 0, 1, 2),
+    (2, 3, 4, 5, 0, 1),
+    (1, 2, 3, 4, 5, 0),
+)
+
+SUGGESTION_REMAP = tuple(
+    tuple(
+        list(range(21))
+        + [21 + j for j in PLAYER_REMAP[i]]
+        + [21 + 6 + j for j in PLAYER_REMAP[i]]
+        + [21 + 6 + 6 + j for j in PLAYER_REMAP[i]]
+    )
+    for i in range(6)
+)
+
 
 class StepKind(Enum):
     MOVE = 0  # choosing where to place your token
@@ -17,14 +38,20 @@ class StepKind(Enum):
 
 class CardState:
     MAX_PLAYERS = 6
+    SEQUENCE_MEMORY = 50
 
-    def __init__(self, map_csv: str) -> None:
+    def __init__(self, map_csv: str, max_players: int) -> None:
+        """
+        max_players : Constrain the complexity of the game by reducing the number
+         of players.
+        """
 
         self.board = Board(map_csv)
+        self.max_players = max_players
         # Who has the weapons
         self.card_locations: List[int] = []
-        self.players: List[int] = CardState.pick_players()
-        self.active_players = np.zeros(CardState.MAX_PLAYERS, dtype=np.int8)
+        self.players: List[int] = self.pick_players()
+        self.active_players = np.zeros(self.max_players, dtype=np.int8)
 
         self.envelope: Envelope = Envelope(
             PEOPLE_CARDS[0], WEAPON_CARDS[0], ROOM_CARDS[0]
@@ -32,45 +59,22 @@ class CardState:
 
         # The card knowledge of each player
         self.player_card_knowledge = np.zeros(
-            (CardState.MAX_PLAYERS, CardState.MAX_PLAYERS, len(DECK)), dtype=np.int8
+            (self.max_players, self.max_players, len(DECK)), dtype=np.int8
         )
 
-        # History of the suggestions by player
+        # History of the suggestions represented as a sequence:
+        #    - DECK vector pick 3,  n=21
+        #    - the suggestor pick 1,  n=6
+        #    - can't disprove  pick all that apply, n=6
+        #    - can disprove - pick 0 or 1, n=6
+        #  so length == 21+6+6+6 = 39
+        # ordered with the most recent first
+
         self.suggestions = np.zeros(
-            (
-                CardState.MAX_PLAYERS,
-                len(ROOM_CARDS),
-                len(PEOPLE_CARDS),
-                len(WEAPON_CARDS),
-            ),
+            (self.max_players, len(DECK) + (3 * len(PEOPLE_CARDS))),
             dtype=np.int8,
         )
-
-        # most recent suggestion (so a player can choose how to prove false)
-        self.last_suggestion = np.zeros(len(DECK), dtype=np.int8)
-        self.last_suggestion_player = np.zeros(CardState.MAX_PLAYERS, dtype=np.int8)
-
-        # After a suggestion is made a player publicly proves it false
-        self.did_prove_false = np.zeros(
-            (
-                CardState.MAX_PLAYERS,
-                len(ROOM_CARDS),
-                len(PEOPLE_CARDS),
-                len(WEAPON_CARDS),
-            ),
-            dtype=np.int8,
-        )
-
-        # Failed to prove false - when a player is unable to prove a suggestion false
-        self.didnt_prove_false = np.zeros(
-            (
-                CardState.MAX_PLAYERS,
-                len(ROOM_CARDS),
-                len(PEOPLE_CARDS),
-                len(WEAPON_CARDS),
-            ),
-            dtype=np.int8,
-        )
+        self.suggestion_count = 0
 
         #
         self.current_player = 0
@@ -84,10 +88,9 @@ class CardState:
 
         self.new_game(self.players)
 
-    @staticmethod
-    def pick_players() -> List[int]:
+    def pick_players(self) -> List[int]:
         # You can have between 3 and 6 players:
-        num_players = random.randint(3, 6)
+        num_players = random.randint(3, self.max_players)
 
         # Miss Scarlett always goes first, so only get to pick from the other five:
         players = [0] + random.sample(range(1, 6), k=num_players - 1)
@@ -140,8 +143,7 @@ class CardState:
         # Reset the suggestions and disproving info
         #  - this knowledge is public:
         self.suggestions.fill(0)
-        self.did_prove_false.fill(0)
-        self.didnt_prove_false.fill(0)
+        self.suggestion_count = 0
 
         self.current_player = 0
         self.current_step_kind = StepKind.MOVE
@@ -154,33 +156,24 @@ class CardState:
         #  followed by the next person in the order of player_idx.
         #
         # Which character you player_idx as should not really affect you
-        #
-        #
-        # TODO: Could reduce the size of this space by representing the suggestions
-        #   as a sequence:
-        #    - DECK vector pick 3,  n=21
-        #    - the suggestor pick 1,  n=6
-        #    - can't disprove  pick all that apply, n=6
-        #    - can disprove - pick upto 1, n=6
-        #  so length == 21+6+6+6 = 39
-        #  could record a sequence of 74 in the same space as we represent just the
-        #  per person suggestions.
+        # set the order to start with player_idx followed by the others
+        # in order
+
+        pm = PLAYER_REMAP[player_idx]
+        spm = SUGGESTION_REMAP[player_idx]
 
         return {
             # Public knowledge:
-            "who_am_i": self.who_am_i[player_idx],  # 1x6
             "step_kind": self.current_step_kind_matrix[self.current_step_kind.value][
                 :
             ],  # 1x4
-            "active players": self.active_players,  # 1x6
-            "player locations": self._make_player_positions(),  # 6x205 (1230)
-            "suggestions": self.suggestions,  # 6x9x6x6 (2916)
-            "last_suggestion": self.last_suggestion,  # 1x21
-            "last suggestion player": self.last_suggestion_player,  # 1x6
-            "proved_false": self.did_prove_false,  # 6x9x6x6 (2916)
-            "not_proved_false": self.didnt_prove_false,  # 6x9x6x6 (2916)
+            "active players": self.active_players[pm],  # 1x6
+            "player locations": self._make_player_positions()[pm, :],  # 6x205 (1230)
+            "suggestions": self.suggestions[:, spm],  # 50x39 (1950)
             # Private knowledge:
-            "card locations": self.player_card_knowledge[player_idx],  # 6x21 (126)
+            "card locations": self.player_card_knowledge[
+                player_idx, pm, :
+            ],  # 6x21 (126)
         }
 
     def legal_actions(self) -> tuple:
@@ -237,9 +230,11 @@ class CardState:
         return suggestion
 
     def _legal_disprove(self) -> np.ndarray:
+        # Can disprove using the intersection of the cards in the
+        #  suggestion and the cards the player holds.
         return cast(
             np.ndarray,
-            self.last_suggestion
+            self.suggestions[0]
             * self.player_card_knowledge[self.current_player][self.current_player],
         )
 
@@ -248,7 +243,7 @@ class CardState:
         # make any accusation.
         #
         # Forcing it not to make any accusation
-        #   which includes any cards that it has seen?
+        #   which includes any cards that it has seen
         seen_cards = cast(
             np.ndarray, np.any(self.player_card_knowledge[self.current_player])
         )

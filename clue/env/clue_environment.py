@@ -1,4 +1,5 @@
 import os
+import random
 from typing import Optional
 
 import numpy as np
@@ -18,11 +19,13 @@ class ClueEnvironment(AECEnv):
         "render_fps": 1,
     }
 
-    def __init__(self) -> None:
+    def __init__(self, max_players: int = CardState.MAX_PLAYERS) -> None:
         super().__init__()
-
-        self.clue = CardState(MAP_LOCATION)
-        self.possible_agents = list(range(CardState.MAX_PLAYERS))
+        if max_players < 3 or max_players > CardState.MAX_PLAYERS:
+            raise ValueError("Max players needs to be between 3 and 6 inclusive")
+        self.max_players = max_players
+        self.clue = CardState(MAP_LOCATION, max_players=max_players)
+        self.possible_agents = list(range(self.max_players))
         self.agents = self.clue.players
 
         self.action_spaces = {
@@ -33,20 +36,19 @@ class ClueEnvironment(AECEnv):
                 {
                     "observation": spaces.Dict(
                         {
-                            "who_am_i": spaces.Discete(6),  # 1x6
-                            "step_kind": spaces.Discete(4),  # 1x4
-                            "active players": spaces.Discete(6),  # 1x6
+                            "step_kind": spaces.Discrete(4),  # 1x4
+                            "active players": spaces.Discrete(6),  # 1x6
                             "player locations": spaces.Box(
-                                0, 1, (6, 205), dtype=np.bool_
+                                0, 1, (6, 205), dtype=np.int8
                             ),  # 6x205 (1230)
                             "suggestions": spaces.Box(
-                                0, 1, (50, 39), dtype=np.bool_
-                            ),  # history of last 50 suggestions
+                                0, 1, (50, 39), dtype=np.int8
+                            ),  # 50x39 (1950)
                             # Private knowledge:
                             "card locations": spaces.Box(
-                                0, 1, (6, 21), dtype=np.bool_
+                                0, 1, (6, 21), dtype=np.int8
                             ),  # 6x21 (126)
-                        }
+                        }  # 1x3316 flattened
                     ),
                     "action_mask": spaces.Box(
                         low=0, high=1, shape=(205 + 324 + 21,), dtype=np.int8
@@ -62,7 +64,11 @@ class ClueEnvironment(AECEnv):
         return_info: bool = False,
         options: Optional[dict] = None,
     ) -> None:
-        pass
+        random.seed(seed)
+
+        self.clue.new_game(self.clue.pick_players())
+        self.possible_agents = list(range(self.max_players))
+        self.agents = self.clue.players
 
     def observe(self, agent: str) -> Optional[ObsType]:
         pass
