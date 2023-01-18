@@ -6,7 +6,7 @@ import numpy as np
 from gymnasium import spaces
 from pettingzoo.utils.env import ActionType, AECEnv, ObsType
 
-from clue.state import CardState
+from clue.state import CardState, StepKind
 
 MAP_LOCATION = PARENT_DIR = os.path.dirname(os.path.abspath(__file__)) + "/../map49.csv"
 
@@ -71,10 +71,26 @@ class ClueEnvironment(AECEnv):
         self.agents = self.clue.players
 
     def observe(self, agent: str) -> Optional[ObsType]:
-        pass
+        player_idx = int(agent)
+        knowledge = self.clue.get_player_knowledge(player_idx)
+        legal = self.clue.legal_actions()
+
+        return {
+            "observation": knowledge,
+            "action_mask": legal,
+        }
 
     def step(self, action: ActionType) -> tuple:
-        pass
+        # assume that the action is legal
+        if self.clue.current_step_kind == StepKind.MOVE:
+            self.clue.player_position_matrix[self.clue.current_player] = action[0:205]
+
+            if self.clue.board.is_in_room(self.clue.current_player):
+                # TODO HERE - probably should combine the board stuff with
+                #  the card state - want a single source of truth for
+                #  the location of a player
+                ...
+        return tuple("replace me")
 
     def render(self) -> None | np.ndarray | str | list:
         pass
