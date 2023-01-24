@@ -1,6 +1,6 @@
 import random
 from enum import Enum
-from typing import Dict, List, cast
+from typing import Dict, List, Tuple, cast
 
 import numpy as np
 
@@ -16,6 +16,15 @@ PLAYER_REMAP = (
     (3, 4, 5, 0, 1, 2),
     (2, 3, 4, 5, 0, 1),
     (1, 2, 3, 4, 5, 0),
+)
+
+PLAYER_ORDERBY_PLAYER = (
+    (0, 1, 2, 3, 4, 5),
+    (1, 2, 3, 4, 5, 0),
+    (2, 3, 4, 5, 0, 1),
+    (3, 4, 5, 0, 1, 2),
+    (4, 5, 0, 1, 2, 3),
+    (5, 0, 1, 2, 3, 4),
 )
 
 SUGGESTION_REMAP = tuple(
@@ -51,7 +60,12 @@ class CardState:
         # Who has the weapons
         self.card_locations: List[int] = []
         self.players: List[int] = self.pick_players()
+
+        # Who is holding cards:
         self.active_players = np.zeros(self.max_players, dtype=np.int8)
+
+        # Who has made false accusations and can now only show cards
+        self.false_accusers = np.zeros(self.max_players, dtype=np.int8)
 
         self.envelope: Envelope = Envelope(
             PEOPLE_CARDS[0], WEAPON_CARDS[0], ROOM_CARDS[0]
@@ -68,10 +82,14 @@ class CardState:
         #    - can't disprove  pick all that apply, n=6
         #    - can disprove - pick 0 or 1, n=6
         #  so length == 21+6+6+6 = 39
+
         # ordered with the most recent first
 
         self.suggestions = np.zeros(
-            (self.max_players, len(DECK) + (3 * len(PEOPLE_CARDS))),
+            (
+                CardState.SEQUENCE_MEMORY,
+                len(DECK) + (3 * len(PEOPLE_CARDS)),
+            ),
             dtype=np.int8,
         )
         self.suggestion_count = 0
@@ -82,11 +100,116 @@ class CardState:
         self.current_die_roll = random.randrange(1, 6)
         self.who_am_i = np.identity(self.MAX_PLAYERS, dtype=np.int8)
         self.current_step_kind_matrix = np.identity(len(StepKind), dtype=np.int8)
-        self.player_position_matrix = np.zeros(
-            (self.MAX_PLAYERS, self.board.num_positions), dtype=np.int8
+
+        self.game_over = False
+        self.winner: None | int = None
+        self.new_game(self.players)
+
+    @staticmethod
+    def suggestion_one_hot(
+        room_idx: int, person_idx: int, weapon_idx: int
+    ) -> np.ndarray:
+        suggestion = np.zeros(
+            [len(ROOM_CARDS), len(PEOPLE_CARDS), len(WEAPON_CARDS)], dtype=np.int8
+        )
+        suggestion[room_idx, person_idx, weapon_idx] = 1
+        return suggestion.ravel()
+
+    @staticmethod
+    def suggestion_one_hot_decode(one_hot: np.ndarray) -> Tuple[int, int, int]:
+        idx = one_hot.argmax()
+        room, person, weapon = np.unravel_index(
+            idx, (len(ROOM_CARDS), len(PEOPLE_CARDS), len(WEAPON_CARDS))
+        )
+        return room, person, weapon
+
+    @staticmethod
+    def suggestion_to_deck_vector(
+        room_idx: int, person_idx: int, weapon_idx: int
+    ) -> np.ndarray:
+        """The 21 element vector representing each"""
+        deck = np.zeros((21,), dtype=np.int8)
+        deck[room_idx] = 1
+        deck[9 + person_idx] = 1
+        deck[9 + 6 + weapon_idx] = 1
+        return deck
+
+    @staticmethod
+    def suggestion_from_deck_vector(deck: np.ndarray) -> Tuple[int, int, int]:
+        """The 21 element vector representing each"""
+        room = deck[0:9].argmax()
+        person = deck[9 : (9 + 6)].argmax()
+        weapon = deck[(9 + 6) :].argmax()
+        return room, person, weapon
+
+    @staticmethod
+    def encode_suggestion_history(
+        room_idx: int,
+        person_idx: int,
+        weapon_idx: int,
+        suggestor_idx: int,
+        cant_disprove: np.ndarray,
+        can_disprove_idx: int,
+    ) -> np.ndarray:
+        """Suggestion history vector is:
+        s[0:21] - DECK vector pick 3,  n=21
+        s[21:27]- the suggestor pick 1,  n=6
+        s[27:33] can't disprove  pick all that apply, n=6
+        s[33:39]- can disprove - pick 0 or 1, n=6
+        """
+        suggestion = np.zeros(39, dtype=np.int8)
+
+        deck = CardState.suggestion_to_deck_vector(room_idx, person_idx, weapon_idx)
+        suggestion[0:21] = deck
+
+        suggestion[21 + suggestor_idx] = 1
+
+        suggestion[27:33] = cant_disprove
+
+        if can_disprove_idx != -1:
+            suggestion[33 + can_disprove_idx] = 1
+
+        return suggestion
+
+    def make_suggestion(
+        self, room_idx: int, person_idx: int, weapon_idx: int
+    ) -> Tuple[np.ndarray, int]:
+        """Given the current suggestion state figure out who can't disprove it
+        returns - the flags of those who could not disprove and the idx of the
+        player who can or -1
+        """
+
+        # move the person to the right room:
+        self.board.move_to_room(person_idx, room_idx)
+
+        suggested_cards = CardState.suggestion_to_deck_vector(
+            room_idx, person_idx, weapon_idx
         )
 
-        self.new_game(self.players)
+        cant_disprove = np.zeros(6)
+        can_disprove = -1
+
+        for other_idx in PLAYER_ORDERBY_PLAYER[self.current_player][1:6]:
+            other_cards = self.player_card_knowledge[other_idx][other_idx]
+            if (suggested_cards * other_cards).any():
+                can_disprove = 1
+                break
+            else:
+                cant_disprove[other_idx] = 1
+
+        return cant_disprove, can_disprove
+
+    def show_player_card(
+        self, suggestor_idx: int, disprover_idx: int, deck: np.array
+    ) -> None:
+        """A player shows one of their cards
+        to the player which disproves their suggestion"""
+        # Update the suggestors knowledege:
+        deck_idx = deck.argmax()
+        self.player_card_knowledge[suggestor_idx][disprover_idx][deck_idx] = 1
+
+    def get_last_suggestor(self) -> int:
+        return int(self.suggestions[0][21:27].argmax())
 
     def pick_players(self) -> List[int]:
         # You can have between 3 and 6 players:
@@ -113,6 +236,8 @@ class CardState:
         self.active_players.fill(0)
         for player_idx in self.players:
             self.active_players[player_idx] = 1
+
+        self.false_accusers = np.zeros(self.max_players, dtype=np.int8)
 
         # grab cards for the envelope:
         self.envelope = Envelope(
@@ -148,6 +273,28 @@ class CardState:
         self.current_player = 0
         self.current_step_kind = StepKind.MOVE
         self.current_die_roll = random.randint(1, 6)
+        self.game_over = False
+        self.winner = None
+
+    def make_accusation(self, accusation_one_hot: np.array) -> bool:
+        accuser_idx = self.current_player
+        r, p, w = CardState.suggestion_one_hot_decode(accusation_one_hot)
+        correct = (
+            ROOM_CARDS[r] == self.envelope.room
+            and PEOPLE_CARDS[p] == self.envelope.person
+            and WEAPON_CARDS[w] == self.envelope.weapon
+        )
+        if correct:
+            # This player just won!
+            self.game_over = True
+            self.winner = self.current_player
+        else:
+            self.false_accusers[accuser_idx] = 1
+            if np.dot(self.active_players, self.false_accusers) == self.num_players:
+                # All players make false accusations!
+                self.game_over = True
+
+        return correct
 
     def get_player_knowledge(self, player_idx: int) -> Dict:
         # TODO: decide if we make the order consistent?
@@ -168,7 +315,9 @@ class CardState:
                 :
             ],  # 1x4
             "active players": self.active_players[pm],  # 1x6
-            "player locations": self._make_player_positions()[pm, :],  # 6x205 (1230)
+            "player locations": self.board.player_position_matrix[
+                pm, :
+            ],  # 6x205 (1230)
             "suggestions": self.suggestions[:, spm],  # 50x39 (1950)
             # Private knowledge:
             "card locations": self.player_card_knowledge[
@@ -268,10 +417,17 @@ class CardState:
 
         return suggestion
 
-    def _make_player_positions(self) -> np.ndarray:
-        self.player_position_matrix.fill(0)
+    def next_player(self) -> int:
+        order_of_play = PLAYER_ORDERBY_PLAYER[self.current_player]
+        for i in range(1, 6):
+            player_idx = order_of_play[i]
+            if (
+                self.active_players[player_idx] == 1
+                and self.false_accusers[player_idx] == 0
+            ):
+                return player_idx
 
-        for player_idx, pos_idx in enumerate(self.board.player_positions):
-            self.player_position_matrix[player_idx][pos_idx] = 1
+        if self.false_accusers[self.current_player]:
+            raise ValueError("No one left to play.")
 
-        return self.player_position_matrix
+        return self.current_player

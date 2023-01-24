@@ -14,17 +14,20 @@ STARTING_POINT_TO_PLAYER_CARD = {
     "spp": "Professor Plum",
 }
 
-ROOM_NAME_TO_ROOM_INDEX = {
-    "hall": 0,
-    "lounge": 1,
-    "dinning room": 2,
-    "kitchen": 3,
-    "ball room": 4,
-    "conservatory": 5,
-    "billiard room": 6,
-    "library": 7,
-    "study": 8,
-}
+
+ROOM_NAMES = [
+    "hall",
+    "lounge",
+    "dinning room",
+    "kitchen",
+    "ball room",
+    "conservatory",
+    "billiard room",
+    "library",
+    "study",
+]
+
+ROOM_NAME_TO_ROOM_INDEX = {name: idx for idx, name in enumerate(ROOM_NAMES)}
 
 
 def load_map(filename: str = "map49.csv") -> List[List[str]]:
@@ -131,6 +134,10 @@ class Board:
             for start_id in STARTING_POINT_TO_PLAYER_CARD
         ]
         self.player_positions = self.player_positions_initial.copy()
+        self.player_position_matrix = np.zeros(
+            (self.num_players, self.num_positions), dtype=np.int8
+        )
+        self.reset_positions()
 
         # Pre create so that we don't need to reallocate each time.
         self._legal_positions_vector = np.zeros((self.num_positions,), dtype=np.int8)
@@ -138,6 +145,8 @@ class Board:
 
     def reset_positions(self) -> None:
         self.player_positions = self.player_positions_initial.copy()
+        for player_idx, position in enumerate(self.player_positions):
+            self.player_position_matrix[player_idx][position] = 1
 
     @staticmethod
     def _is_a_square(code: str) -> bool:
@@ -178,6 +187,19 @@ class Board:
         # first entries and the door locations, followed by the
         #  locations of the squares.
         self.locations.extend(square_locations)
+
+    def set_location(self, player_idx: int, pos_vector: np.ndarray) -> None:
+        pos_idx = np.argmax(pos_vector)
+        self.player_positions[player_idx] = pos_idx
+        self.player_position_matrix[player_idx].fill(0)
+        self.player_position_matrix[player_idx][pos_idx] = 1
+
+    def move_to_room(self, player_idx: int, room_idx: int) -> None:
+        room_name = ROOM_NAMES[room_idx]
+        door_idx = self.room_to_doors[room_name][0]
+        self.player_positions[player_idx] = door_idx
+        self.player_position_matrix[player_idx].fill(0)
+        self.player_position_matrix[player_idx][door_idx] = 1
 
     def build_secret_passages(self) -> Dict[int, int]:
         # secret passages (only works if there is one door per room)
