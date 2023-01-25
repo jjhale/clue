@@ -14,6 +14,7 @@ STARTING_POINT_TO_PLAYER_CARD = {
     "spp": "Professor Plum",
 }
 
+ONE_CHAR_PLAYER = ("S", "M", "W", "G", "P", "π")
 
 ROOM_NAMES = [
     "hall",
@@ -26,6 +27,20 @@ ROOM_NAMES = [
     "library",
     "study",
 ]
+
+# Where to display a player in a given room:
+PLAYER_ROOM_POSITIONS = {
+    "hall": (2, 10),
+    "lounge": (3, 20),
+    "dinning room": (11, 20),
+    "kitchen": (20, 20),
+    "ball room": (21, 10),
+    "conservatory": (23, 1),
+    "billiard room": (16, 1),
+    "library": (9, 1),
+    "study": (3, 1),
+}
+
 
 ROOM_NAME_TO_ROOM_INDEX = {name: idx for idx, name in enumerate(ROOM_NAMES)}
 
@@ -43,6 +58,12 @@ def load_map(filename: str = "map49.csv") -> List[List[str]]:
 def print_grid(
     grid: List[List[str]], overlay: Dict[Tuple[int, int], str] | None = None
 ) -> None:
+    print(grid_string(grid, overlay))
+
+
+def grid_string(
+    grid: List[List[str]], overlay: Dict[Tuple[int, int], str] | None = None
+) -> str:
     symbols_3: Dict[str, str] = {
         "0": "\u2588\u2588\u2588",  # filled in block
         "1": "[ ]",  # ""\u2591",  # Light shade block
@@ -59,8 +80,10 @@ def print_grid(
     # could get fancy here
     #  https://www.fileformat.info/info/unicode/block/box_drawing/utf8test.htm
 
+    result: List[str] = []
+
     for i, row in enumerate(grid):
-        print()
+        result.append("\n")
         for j, col in enumerate(row):
             key: str
             if col == "":
@@ -78,8 +101,10 @@ def print_grid(
                 cell = symbols_3[key][0] + overlay[(i, j)] + symbols_3[key][2]
             else:
                 cell = symbols_3[key]
-            print(cell, end="")
-    print()
+            result.append(cell)
+    result.append("\n")
+
+    return "".join(result)
 
 
 @dataclass
@@ -189,7 +214,7 @@ class Board:
         self.locations.extend(square_locations)
 
     def set_location(self, player_idx: int, pos_vector: np.ndarray) -> None:
-        pos_idx = np.argmax(pos_vector)
+        pos_idx = int(np.argmax(pos_vector))
         self.player_positions[player_idx] = pos_idx
         self.player_position_matrix[player_idx].fill(0)
         self.player_position_matrix[player_idx][pos_idx] = 1
@@ -327,20 +352,47 @@ class Board:
         # Unmark current location as visited
         self.visited[current_position] = 0
 
+    def generate_board_string(self) -> str:
+        overlay: Dict[Tuple[int, int], str] = {}
+        for player_idx in range(6):
+            pos: tuple[int, int]
+            if self.is_in_room(player_idx):
+                room = self.which_room(player_idx)
+                pos = PLAYER_ROOM_POSITIONS[ROOM_NAMES[room]]
+                pos = (pos[0], pos[1] + player_idx)
+            else:
+                loc_idx = self.player_positions[player_idx]
+                location = self.locations[loc_idx]
+                pos = (location.i, location.j)
+            overlay[pos] = ONE_CHAR_PLAYER[player_idx]
+
+        return grid_string(self.grid, overlay)
+
 
 if __name__ == "__main__":
     board = Board("map49.csv")
-    player_idx = 0
-    legal_positions = board.legal_positions(player_idx=player_idx, throw=6)
-    initial_pos = board.player_positions[player_idx]
-    initial_overlay = {
-        (board.locations[initial_pos].i, board.locations[initial_pos].j): "S"
-    }
-    legal_overlay = {
-        (board.locations[i].i, board.locations[i].j): "e"
-        for i, legal in enumerate(legal_positions)
-        if legal
-    }
+    # player_idx = 0
+    # legal_positions = board.legal_positions(player_idx=player_idx, throw=6)
+    # initial_pos = board.player_positions[player_idx]
+    # initial_overlay = {
+    #     (board.locations[initial_pos].i, board.locations[initial_pos].j): "S"
+    # }
+    # legal_overlay = {
+    #     (board.locations[i].i, board.locations[i].j): "e"
+    #     for i, legal in enumerate(legal_positions)
+    #     if legal
+    # }
 
-    print_grid(board.grid, {**legal_overlay, **initial_overlay})
-    print(f"Num pos: {board.num_positions}")
+    print("Starting points:")
+    board_str = board.generate_board_string()
+    print(board_str)
+
+    for room in range(6):
+        print(ROOM_NAMES[room])
+        for player in range(6):
+            board.move_to_room(player, room)
+        board_str = board.generate_board_string()
+        print(board_str)
+
+    # print_grid(board.grid, {**legal_overlay, **initial_overlay})
+    # print(f"Num pos: {board.num_positions}")

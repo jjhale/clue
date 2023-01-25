@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple, cast
 import numpy as np
 
 from clue.cards import DECK, PEOPLE_CARDS, ROOM_CARDS, WEAPON_CARDS, Envelope
-from clue.map import Board
+from clue.map import ROOM_NAMES, Board
 
 # Alway repreresent the state of the world from the
 #  current player's point of view
@@ -49,7 +49,9 @@ class CardState:
     MAX_PLAYERS = 6
     SEQUENCE_MEMORY = 50
 
-    def __init__(self, map_csv: str, max_players: int) -> None:
+    def __init__(
+        self, map_csv: str, max_players: int, log_actions: bool = True
+    ) -> None:
         """
         max_players : Constrain the complexity of the game by reducing the number
          of players.
@@ -103,6 +105,9 @@ class CardState:
 
         self.game_over = False
         self.winner: None | int = None
+
+        self.what_just_happened: List[str] = []
+        self.should_log_actions = log_actions
         self.new_game(self.players)
 
     @staticmethod
@@ -121,7 +126,7 @@ class CardState:
         room, person, weapon = np.unravel_index(
             idx, (len(ROOM_CARDS), len(PEOPLE_CARDS), len(WEAPON_CARDS))
         )
-        return room, person, weapon
+        return int(room), int(person), int(weapon)
 
     @staticmethod
     def suggestion_to_deck_vector(
@@ -140,7 +145,7 @@ class CardState:
         room = deck[0:9].argmax()
         person = deck[9 : (9 + 6)].argmax()
         weapon = deck[(9 + 6) :].argmax()
-        return room, person, weapon
+        return int(room), int(person), int(weapon)
 
     @staticmethod
     def encode_suggestion_history(
@@ -171,6 +176,10 @@ class CardState:
 
         return suggestion
 
+    def log_action(self, message: str) -> None:
+        if self.should_log_actions:
+            self.what_just_happened.append(message)
+
     def make_suggestion(
         self, room_idx: int, person_idx: int, weapon_idx: int
     ) -> Tuple[np.ndarray, int]:
@@ -178,6 +187,11 @@ class CardState:
         returns - the flags of those who could not disprove and the idx of the
         player who can or -1
         """
+        self.log_action(
+            f"{PEOPLE_CARDS[self.current_player]} suggested:"
+            f"{PEOPLE_CARDS[person_idx].name} in the {ROOM_CARDS[room_idx].name} "
+            f"with the {WEAPON_CARDS[weapon_idx].name}"
+        )
 
         # move the person to the right room:
         self.board.move_to_room(person_idx, room_idx)
@@ -192,21 +206,45 @@ class CardState:
         for other_idx in PLAYER_ORDERBY_PLAYER[self.current_player][1:6]:
             other_cards = self.player_card_knowledge[other_idx][other_idx]
             if (suggested_cards * other_cards).any():
-                can_disprove = 1
+                can_disprove = other_idx
+                self.log_action(f" - {PEOPLE_CARDS[other_idx].name} CAN disprove it")
                 break
             else:
                 cant_disprove[other_idx] = 1
+                self.log_action(f" - {PEOPLE_CARDS[other_idx].name} can't disprove it")
+
+        if can_disprove == -1:
+            # No one was able to disprove us so go straight to making an accusation
+            #  if desired
+            self.current_player = self.current_player
+            self.current_step_kind = StepKind.ACCUSATION
+        else:
+            # Let the disprover choose which card to show
+            self.current_player = can_disprove
+            self.current_step_kind = StepKind.DISPROVE_SUGGESTION
 
         return cant_disprove, can_disprove
 
-    def show_player_card(
-        self, suggestor_idx: int, disprover_idx: int, deck: np.array
-    ) -> None:
+    def show_player_card(self, disprover_idx: int, deck: np.ndarray) -> None:
         """A player shows one of their cards
-        to the player which disproves their suggestion"""
+        to the player which disproves their suggestion,
+        the next step is for the suggestor to make an accusation
+        or not
+        """
+        suggestor_idx = self.get_last_suggestor()
+
         # Update the suggestors knowledege:
         deck_idx = deck.argmax()
         self.player_card_knowledge[suggestor_idx][disprover_idx][deck_idx] = 1
+
+        self.log_action(
+            f"{PEOPLE_CARDS[disprover_idx]} disproves {PEOPLE_CARDS[disprover_idx]}'s "
+            f"suggestion by showing them {DECK[deck_idx]}."
+        )
+
+        # Next it is the suggestors turn or make an accusation (or not)
+        self.current_player = suggestor_idx
+        self.current_step_kind = StepKind.ACCUSATION
 
     def get_last_suggestor(self) -> int:
         return int(self.suggestions[0][21:27].argmax())
@@ -231,6 +269,12 @@ class CardState:
                 "must be the first player! Unable to player_idx without her."
             )
 
+        self.log_action(
+            f"New game started with {len(players)} players: "
+            + ", ".join(PEOPLE_CARDS[i].name for i in players)
+            + "."
+        )
+
         self.players = players
         self.num_players = len(players)
         self.active_players.fill(0)
@@ -246,6 +290,11 @@ class CardState:
             room=random.choice(ROOM_CARDS),
         )
 
+        self.log_action(
+            f"OMG there has been a murder: {self.envelope.person.name} did it in the "
+            f"{self.envelope.room.name} with the {self.envelope.weapon.name}!"
+        )
+
         # Shuffle the other cards
         remaining_cards = [
             idx
@@ -259,11 +308,27 @@ class CardState:
         random.shuffle(remaining_cards)
 
         # Assign the cards to the players:
+
         self.player_card_knowledge.fill(0)
         for i, card_idx in enumerate(remaining_cards):
             player_idx = self.players[i % self.num_players]
             # Initially each player only knows their own cards
             self.player_card_knowledge[player_idx][player_idx][card_idx] = 1
+
+        self.log_action("The cards were dealt:")
+
+        for player_idx in self.players:
+            card_names = [
+                DECK[i].name
+                for i, has_card in enumerate(
+                    self.player_card_knowledge[player_idx][player_idx][card_idx]
+                )
+                if has_card
+            ]
+            self.log_action(
+                f"{PEOPLE_CARDS[player_idx].name} got:\n  - "
+                + "\n  - ".join(card_names)
+            )
 
         # Reset the suggestions and disproving info
         #  - this knowledge is public:
@@ -273,28 +338,98 @@ class CardState:
         self.current_player = 0
         self.current_step_kind = StepKind.MOVE
         self.current_die_roll = random.randint(1, 6)
+
+        self.log_action(
+            f"{PEOPLE_CARDS[self.current_player]} rolled {self.current_die_roll}"
+        )
+
         self.game_over = False
         self.winner = None
 
-    def make_accusation(self, accusation_one_hot: np.array) -> bool:
+    def next_move(self) -> None:
+        self.current_player = self.next_player()
+        self.current_step_kind = StepKind.MOVE
+        self.current_die_roll = random.randint(1, 6)
+
+        self.log_action(
+            f"{PEOPLE_CARDS[self.current_player]} rolled {self.current_die_roll}"
+        )
+
+    def move_player(self, new_position: np.ndarray) -> None:
+        self.board.set_location(self.current_player, new_position)
+        if self.should_log_actions:
+            pos_idx = self.board.player_positions[self.current_player]
+            self.log_action(f"{PEOPLE_CARDS[self.current_player]} moved to cell ")
+
+        if self.board.is_in_room(self.current_player):
+            self.current_step_kind = StepKind.SUGGESTION
+            if self.should_log_actions:
+                self.log_action(
+                    f"{PEOPLE_CARDS[self.current_player]} entered the "
+                    f"{ROOM_NAMES[self.board.which_room(self.current_player)]} "
+                )
+                self.log_action(self.board.generate_board_string())
+
+        else:
+            if self.should_log_actions:
+                pos_idx = self.board.player_positions[self.current_player]
+                cell = self.board.locations[pos_idx]
+                self.log_action(
+                    f"{PEOPLE_CARDS[self.current_player]} moved to cell "
+                    f"{cell.i}, {cell.j}"
+                )
+                self.log_action(self.board.generate_board_string())
+            self.next_move()
+
+    def make_accusation(self, accusation_one_hot: np.ndarray) -> bool:
+        """The current player makes an accusation"""
         accuser_idx = self.current_player
+
+        if np.any(accusation_one_hot):
+            # Just move on to the next player
+            self.log_action(
+                f"{PEOPLE_CARDS[self.current_player]} decided not to make an accusation"
+            )
+            self.next_move()
+            return True
+
         r, p, w = CardState.suggestion_one_hot_decode(accusation_one_hot)
         correct = (
             ROOM_CARDS[r] == self.envelope.room
             and PEOPLE_CARDS[p] == self.envelope.person
             and WEAPON_CARDS[w] == self.envelope.weapon
         )
+
+        self.log_action(
+            f"{PEOPLE_CARDS[self.current_player]} made an accusation: "
+            f"{PEOPLE_CARDS[p].name} in the {ROOM_CARDS[r].name} with the "
+            f"{WEAPON_CARDS[w].name}"
+        )
+
         if correct:
             # This player just won!
             self.game_over = True
             self.winner = self.current_player
+            self.log_action(
+                f"{PEOPLE_CARDS[self.current_player]} is correct and has won!"
+            )
+
         else:
             self.false_accusers[accuser_idx] = 1
+            self.log_action(
+                f"{PEOPLE_CARDS[self.current_player]} is wrong - they are out!"
+            )
             if np.dot(self.active_players, self.false_accusers) == self.num_players:
                 # All players make false accusations!
+                self.log_action("There are no players left - GAME OVER")
                 self.game_over = True
+            else:
+                self.next_move()
 
         return correct
+
+    def is_false_accuser(self, player_idx: int) -> bool:
+        return cast(bool, self.false_accusers[player_idx] == 1)
 
     def get_player_knowledge(self, player_idx: int) -> Dict:
         # TODO: decide if we make the order consistent?
@@ -431,3 +566,11 @@ class CardState:
             raise ValueError("No one left to play.")
 
         return self.current_player
+
+    def render(self) -> str:
+        if self.should_log_actions:
+            events = "\n".join(self.what_just_happened)
+            self.what_just_happened = []
+            return events
+        else:
+            return ""

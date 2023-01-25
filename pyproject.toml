@@ -37,5 +37,6 @@ files = "**/*.py"
 namespace_packages = true
 
 [[tool.mypy.overrides]]
-module = "pettingzoo.*"
+module = ["pettingzoo.*"]
+
 ignore_missing_imports = true

@@ -1,6 +1,6 @@
 import os
 import random
-from typing import Optional
+from typing import Dict, Optional
 
 import numpy as np
 from gymnasium import spaces
@@ -25,6 +25,7 @@ class ClueEnvironment(AECEnv):
             raise ValueError("Max players needs to be between 3 and 6 inclusive")
         self.max_players = max_players
         self.clue = CardState(MAP_LOCATION, max_players=max_players)
+
         self.possible_agents = list(range(self.max_players))
         self.agents = self.clue.players
         self.num_suggestions = 0
@@ -65,12 +66,22 @@ class ClueEnvironment(AECEnv):
         return_info: bool = False,
         options: Optional[dict] = None,
     ) -> None:
+        self.num_suggestions = 0
+
         random.seed(seed)
 
         self.clue.new_game(self.clue.pick_players())
-        self.possible_agents = list(range(self.max_players))
+
+        # The standard AEC variables
         self.agents = self.clue.players
-        self.num_suggestions = 0
+        self.rewards = {i: 0 for i in self.agents}
+        self._cumulative_rewards = {i: 0 for i in self.agents}
+        self.terminations = {i: False for i in self.agents}
+        self.truncations = {i: False for i in self.agents}
+        self.infos: Dict[int, Dict] = {i: {} for i in self.agents}
+
+        # Selects the first agent (who is always Miss Scarlet)
+        self.agent_selection = self.clue.current_player
 
     def observe(self, agent: str) -> Optional[ObsType]:
         player_idx = int(agent)
@@ -82,26 +93,20 @@ class ClueEnvironment(AECEnv):
             "action_mask": legal,
         }
 
-    def step(self, action: ActionType) -> tuple:
-        if self.clue.game_over:
-            for agent in self.agents:
-                if agent == self.clue.winner:
-                    self.rewards[agent] = self.rewards[agent] + 1
-                else:
-                    self.rewards[agent] = self.rewards[agent] - 1
-                self.terminations[agent] = True
+    def step(self, action: ActionType) -> None:
+        if (
+            self.truncations[self.agent_selection]
+            or self.terminations[self.agent_selection]
+        ):
+            self._was_dead_step(action)
+            return
 
-        # assume that the action is legal
+        assert self.agent_selection == self.clue.current_player
+
+        # assume that the action is legal?
         if self.clue.current_step_kind == StepKind.MOVE:
             # The first 205 values represent the position output
-            self.clue.board.set_location(self.clue.current_player, action[0:205])
-
-            if self.clue.board.is_in_room(self.clue.current_player):
-                self.clue.current_step_kind = StepKind.SUGGESTION
-            else:
-                self.clue.current_player = self.clue.next_player()
-                self.clue.current_step_kind = StepKind.MOVE
-                self.clue.current_die_roll = random.randint(1, 6)
+            self.clue.move_player(action[0:205])
 
         elif self.clue.current_step_kind == StepKind.SUGGESTION:
             self.num_suggestions = self.num_suggestions + 1
@@ -129,63 +134,45 @@ class ClueEnvironment(AECEnv):
                 can_disprove_idx=can_disprove_idx,
             )
 
-            if can_disprove_idx == -1:
-                # No one was able to disprove us so go straight to making an accusation
-                #  if desired
-                self.clue.current_player = self.clue.current_player
-                self.clue.current_step_kind = StepKind.ACCUSATION
-            else:
-                # Let the disprover choose which card to show
-                self.clue.current_player = can_disprove_idx
-                self.clue.current_step_kind = StepKind.DISPROVE_SUGGESTION
-
         elif self.clue.current_step_kind == StepKind.DISPROVE_SUGGESTION:
-            # The card to show is in the last 21
-            chosen_card_deck = action[-21:]
-            suggestor_idx = self.clue.get_last_suggestor()
+            # The card to show is in the last 21 of the action array
             self.clue.show_player_card(
-                suggestor_idx=suggestor_idx,
-                disprover_idx=self.clue.current_player,
-                deck=chosen_card_deck,
+                disprover_idx=self.agent_selection,
+                deck=action[-21:],
             )
-
-            # Next it is the suggestors turn or make an accusation (or not)
-            self.clue.current_player = suggestor_idx
-            self.clue.current_step_kind = StepKind.ACCUSATION
 
         elif self.clue.current_step_kind == StepKind.ACCUSATION:
             # Check for an accusation:
             accusation = action[205 : (205 + (9 * 6 * 6))]
-            if not accusation.any():
-                # Just move on to the next player
-                self.clue.current_player = self.clue.next_player()
-                self.clue.current_step_kind = StepKind.MOVE
-                self.clue.current_die_roll = random.randint(1, 6)
-
-            # Check the accusation
             correct = self.clue.make_accusation(accusation)
-            if correct:
-                self.rewards[self.clue.current_player] = (
-                    self.rewards[self.clue.current_player] + 1
+
+            if correct and self.clue.game_over:
+                self.rewards[self.agent_selection] = (
+                    self.rewards[self.agent_selection] + 1
                 )
-                self.terminations[self.clue.current_player] = True
-                # remaining players just now lost -end of game
+                self.terminations[self.agent_selection] = True
+                # remaining players just now lost - end of game
                 for player, terminated in self.terminations.items():
                     if not terminated:
-                        self.rewards[player] = self.rewards[player] - 1
+                        if not self.clue.is_false_accuser(player):
+                            self.rewards[player] = self.rewards[player] - 1
                         self.terminations[player] = True
             else:
-                # We lost :(
-                self.rewards[self.clue.current_player] = (
-                    self.rewards[self.clue.current_player] + 1
+                # We lost, but still need to stick around to tell the other players
+                # which cards we have.
+                self.rewards[self.agent_selection] = (
+                    self.rewards[self.agent_selection] - 1
                 )
 
-                #
+        self.agent_selection = self.clue.current_player
 
-        return tuple("replace me")
+        self._accumulate_rewards()
+
+        if self.render_mode == "human":
+            self.render()
 
     def render(self) -> None | np.ndarray | str | list:
-        pass
+        return self.clue.render()
 
     def seed(seed: Optional[int] = None) -> None:
         pass
