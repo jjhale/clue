@@ -1,10 +1,10 @@
 import os
 import random
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 from gymnasium import spaces
-from pettingzoo.utils.env import ActionType, AECEnv, ObsType
+from pettingzoo.utils.env import ActionType, AECEnv, AgentID, ObsType
 
 from clue.state import CardState, StepKind
 
@@ -26,39 +26,46 @@ class ClueEnvironment(AECEnv):
         self.max_players = max_players
         self.clue = CardState(MAP_LOCATION, max_players=max_players)
 
-        self.possible_agents = list(range(self.max_players))
-        self.agents = self.clue.players
+        self.agent_map = {f"player_{i}": i for i in range(self.max_players)}
+        self.possible_agents = list(self.agent_map.keys())
+
+        self.agents = [self.possible_agents[i] for i in self.clue.players]
         self.num_suggestions = 0
 
+        # Actions
+        # 205 - board positions
+        # 324 - accusations or suggestion ( 9 rooms x 6people x 6 weapons)
+        # 1 - choose to make an accusation or not
+        # 21 - which card to show accusor to disprove it
         self.action_spaces = {
-            i: spaces.Discrete(205 + 324 + 21) for i in self.agents
-        }  # (550 actions)
+            i: spaces.Discrete(205 + 324 + 1 + 21) for i in self.possible_agents
+        }  # (551 actions)
+
         self.observation_spaces = {
             i: spaces.Dict(
                 {
                     "observation": spaces.Dict(
                         {
                             "step_kind": spaces.Discrete(4),  # 1x4
-                            "active players": spaces.Discrete(6),  # 1x6
-                            "player locations": spaces.Box(
-                                0, 1, (6, 205), dtype=np.int8
+                            "active players": spaces.MultiBinary(6),  # 1x6
+                            "player locations": spaces.MultiDiscrete(
+                                [205] * 6
                             ),  # 6x205 (1230)
-                            "suggestions": spaces.Box(
-                                0, 1, (50, 39), dtype=np.int8
-                            ),  # 50x39 (1950)
+                            "suggestions": spaces.MultiBinary([50, 39]),  # 50x39 (1950)
                             # Private knowledge:
-                            "card locations": spaces.Box(
-                                0, 1, (6, 21), dtype=np.int8
-                            ),  # 6x21 (126)
+                            "card locations": spaces.MultiBinary([6, 21]),  # 6x21 (126)
                         }  # 1x3316 flattened
                     ),
-                    "action_mask": spaces.Box(
-                        low=0, high=1, shape=(205 + 324 + 21,), dtype=np.int8
-                    ),  # (550 actions)
+                    "action_mask": spaces.MultiBinary(
+                        205 + 324 + 1 + 21
+                    ),  # (551 actions)
                 }
             )
-            for i in self.agents
+            for i in self.possible_agents
         }
+
+        self.render_mode: str | None = None
+        self.reset()
 
     def reset(
         self,
@@ -73,18 +80,20 @@ class ClueEnvironment(AECEnv):
         self.clue.new_game(self.clue.pick_players())
 
         # The standard AEC variables
-        self.agents = self.clue.players
+        self.agents = [self.possible_agents[i] for i in self.clue.players]
         self.rewards = {i: 0 for i in self.agents}
         self._cumulative_rewards = {i: 0 for i in self.agents}
         self.terminations = {i: False for i in self.agents}
         self.truncations = {i: False for i in self.agents}
-        self.infos: Dict[int, Dict] = {i: {} for i in self.agents}
+        self.infos: Dict[str, Dict] = {i: {} for i in self.agents}
 
+        # TODO: HERE Need to make the agent names not be ints coz it fails assert
+        # current_player when current player is 0
         # Selects the first agent (who is always Miss Scarlet)
-        self.agent_selection = self.clue.current_player
+        self.agent_selection = self.possible_agents[self.clue.current_player]
 
     def observe(self, agent: str) -> Optional[ObsType]:
-        player_idx = int(agent)
+        player_idx = self.agent_map[agent]
         knowledge = self.clue.get_player_knowledge(player_idx)
         legal = self.clue.legal_actions()
 
@@ -101,19 +110,27 @@ class ClueEnvironment(AECEnv):
             self._was_dead_step(action)
             return
 
-        assert self.agent_selection == self.clue.current_player
+        # Actions
+        # 205 - board positions
+        # 324 - accusations or suggestion ( 9 rooms x 6people x 6 weapons)
+        # 1 - choose not to make an accusation
+        # 21 - which card to show accusor to disprove it
+
+        assert self.agent_selection == self.possible_agents[self.clue.current_player]
 
         # assume that the action is legal?
         if self.clue.current_step_kind == StepKind.MOVE:
             # The first 205 values represent the position output
-            self.clue.move_player(action[0:205])
+            self.clue.move_player(action)
 
         elif self.clue.current_step_kind == StepKind.SUGGESTION:
             self.num_suggestions = self.num_suggestions + 1
             # Decode the suggestion
-            room, person, weapon = CardState.suggestion_one_hot_decode(
-                action[205 : (205 + (9 * 6 * 6))]
-            )
+            (
+                person,
+                weapon,
+                room,
+            ) = CardState.suggestion_one_hot_decode(action - 205)
 
             # Who is the suggestor:
             suggestor_idx = self.clue.current_player
@@ -133,20 +150,22 @@ class ClueEnvironment(AECEnv):
                 cant_disprove=cant_disprove,
                 can_disprove_idx=can_disprove_idx,
             )
+            assert self.clue.get_last_suggestor() == suggestor_idx
 
         elif self.clue.current_step_kind == StepKind.DISPROVE_SUGGESTION:
             # The card to show is in the last 21 of the action array
             self.clue.show_player_card(
-                disprover_idx=self.agent_selection,
-                deck=action[-21:],
+                disprover_idx=self.agent_map[self.agent_selection],
+                deck_idx=action - (205 + 324 + 1),
             )
 
         elif self.clue.current_step_kind == StepKind.ACCUSATION:
             # Check for an accusation:
-            accusation = action[205 : (205 + (9 * 6 * 6))]
+            accusation = action - 205
+
             correct = self.clue.make_accusation(accusation)
 
-            if correct and self.clue.game_over:
+            if correct:
                 self.rewards[self.agent_selection] = (
                     self.rewards[self.agent_selection] + 1
                 )
@@ -154,7 +173,7 @@ class ClueEnvironment(AECEnv):
                 # remaining players just now lost - end of game
                 for player, terminated in self.terminations.items():
                     if not terminated:
-                        if not self.clue.is_false_accuser(player):
+                        if not self.clue.is_false_accuser(self.agent_map[player]):
                             self.rewards[player] = self.rewards[player] - 1
                         self.terminations[player] = True
             else:
@@ -163,11 +182,15 @@ class ClueEnvironment(AECEnv):
                 self.rewards[self.agent_selection] = (
                     self.rewards[self.agent_selection] - 1
                 )
+                # if everyone else is terminated then we need to terminate too
+                if self.clue.game_over:
+                    self.terminations[self.agent_selection] = True
+                    for player, terminated in self.terminations.items():
+                        self.terminations[player] = True
 
-        self.agent_selection = self.clue.current_player
+        self.agent_selection = self.possible_agents[self.clue.current_player]
 
         self._accumulate_rewards()
-
         if self.render_mode == "human":
             self.render()
 
@@ -179,3 +202,16 @@ class ClueEnvironment(AECEnv):
 
     def close(self) -> None:
         pass
+
+    def last(
+        self, observe: bool = True
+    ) -> Tuple[Optional[ObsType], float, bool, bool, Dict[str, Any]]:
+        return super().last(observe)  # type: ignore
+
+    def observation_space(self, agent: AgentID) -> spaces.Space:
+        """Takes in agent and returns the observation space for that agent.
+
+        MUST return the same value for the same agent name
+
+        """
+        return self.observation_spaces[agent]

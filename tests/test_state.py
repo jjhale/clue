@@ -8,10 +8,10 @@ def test_suggestion_translation_one_hot() -> None:
         for person_idx in range(6):
             for weapon_idx in range(6):
                 one_hot = CardState.suggestion_one_hot(
-                    room_idx=room_idx, person_idx=person_idx, weapon_idx=weapon_idx
+                    person_idx=person_idx, weapon_idx=weapon_idx, room_idx=room_idx
                 )
 
-                r, p, w = CardState.suggestion_one_hot_decode(one_hot)
+                p, w, r = CardState.suggestion_one_hot_decode(one_hot.argmax())
 
                 assert r == room_idx
                 assert p == person_idx
@@ -28,7 +28,7 @@ def test_suggestion_translation_deck() -> None:
 
                 assert deck.shape == (21,)
 
-                r, p, w = CardState.suggestion_from_deck_vector(deck)
+                p, w, r = CardState.suggestion_from_deck_vector(deck)
 
                 assert r == room_idx
                 assert p == person_idx
@@ -52,7 +52,7 @@ def test_encode_suggestion_history() -> None:
     )
 
     assert suggestion.shape == (39,)
-    r, p, w = CardState.suggestion_from_deck_vector(suggestion[0:21])
+    p, w, r = CardState.suggestion_from_deck_vector(suggestion[0:21])
 
     assert (r, p, w) == (room, person, weapon)
 
@@ -79,7 +79,7 @@ def test_encode_suggestion_history_no_disprove() -> None:
     )
 
     assert suggestion.shape == (39,)
-    r, p, w = CardState.suggestion_from_deck_vector(suggestion[0:21])
+    p, w, r = CardState.suggestion_from_deck_vector(suggestion[0:21])
 
     assert (r, p, w) == (room, person, weapon)
 
@@ -87,3 +87,8 @@ def test_encode_suggestion_history_no_disprove() -> None:
 
     assert suggestion[27:33].all()
     assert (suggestion[33:39] == np.array([0, 0, 0, 0, 0, 0])).all()
+
+
+def test_card_state_init(map_csv_location: str) -> None:
+    card_state = CardState(map_csv_location, max_players=6)
+    assert card_state is not None

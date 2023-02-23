@@ -19,9 +19,9 @@ ONE_CHAR_PLAYER = ("S", "M", "W", "G", "P", "π")
 ROOM_NAMES = [
     "hall",
     "lounge",
-    "dinning room",
+    "dining room",
     "kitchen",
-    "ball room",
+    "ballroom",
     "conservatory",
     "billiard room",
     "library",
@@ -32,9 +32,9 @@ ROOM_NAMES = [
 PLAYER_ROOM_POSITIONS = {
     "hall": (2, 10),
     "lounge": (3, 20),
-    "dinning room": (11, 20),
+    "dining room": (11, 20),
     "kitchen": (20, 20),
-    "ball room": (21, 10),
+    "ballroom": (21, 10),
     "conservatory": (23, 1),
     "billiard room": (16, 1),
     "library": (9, 1),
@@ -213,8 +213,10 @@ class Board:
         #  locations of the squares.
         self.locations.extend(square_locations)
 
-    def set_location(self, player_idx: int, pos_vector: np.ndarray) -> None:
-        pos_idx = int(np.argmax(pos_vector))
+    def set_location(self, player_idx: int, pos_idx: int) -> None:
+        # pos_idx = int(np.argmax(pos_vector))
+        if pos_idx < 0 or pos_idx >= len(self.player_position_matrix[player_idx]):
+            raise ValueError(f"Location position out of range: got {pos_idx}")
         self.player_positions[player_idx] = pos_idx
         self.player_position_matrix[player_idx].fill(0)
         self.player_position_matrix[player_idx][pos_idx] = 1
@@ -283,7 +285,6 @@ class Board:
             self.locations[connecting_square_idx].connected_squares.append(idx)
 
     def legal_positions(self, player_idx: int, throw: int) -> np.ndarray:
-
         initial_position: int = self.player_positions[player_idx]
         # clear the legal positions
         self._legal_positions_vector.fill(0)
