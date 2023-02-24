@@ -118,6 +118,12 @@ class ClueEnvironment(AECEnv):
 
         assert self.agent_selection == self.possible_agents[self.clue.current_player]
 
+        # the agent which stepped last had its _cumulative_rewards accounted for
+        # (because it was returned by last()), so the _cumulative_rewards for this
+        # agent should start again at 0
+        self._cumulative_rewards[self.agent_selection] = 0
+        self._clear_rewards()
+
         # assume that the action is legal?
         if self.clue.current_step_kind == StepKind.MOVE:
             # The first 205 values represent the position output
@@ -198,7 +204,7 @@ class ClueEnvironment(AECEnv):
         return self.clue.render()
 
     def seed(seed: Optional[int] = None) -> None:
-        pass
+        np.random.seed(seed)
 
     def close(self) -> None:
         pass
