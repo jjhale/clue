@@ -1,14 +1,24 @@
 import os
 import random
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 from gymnasium import spaces
+from pettingzoo.utils import wrappers
 from pettingzoo.utils.env import ActionType, AECEnv, AgentID, ObsType
 
 from clue.state import CardState, StepKind
 
 MAP_LOCATION = PARENT_DIR = os.path.dirname(os.path.abspath(__file__)) + "/../map49.csv"
+
+
+def env(render_mode: Optional[str] = None) -> AECEnv:
+    internal_render_mode = render_mode if render_mode != "ansi" else "human"
+    env = ClueEnvironment(render_mode=internal_render_mode)
+    if render_mode == "ansi":
+        env = wrappers.CaptureStdoutWrapper(env)
+    env = wrappers.FlattenObservation(env)
+    return env
 
 
 class ClueEnvironment(AECEnv):
@@ -19,7 +29,11 @@ class ClueEnvironment(AECEnv):
         "render_fps": 1,
     }
 
-    def __init__(self, max_players: int = CardState.MAX_PLAYERS) -> None:
+    def __init__(
+        self,
+        max_players: int = CardState.MAX_PLAYERS,
+        render_mode: Optional[str] = None,
+    ) -> None:
         super().__init__()
         if max_players < 3 or max_players > CardState.MAX_PLAYERS:
             raise ValueError("Max players needs to be between 3 and 6 inclusive")
@@ -42,29 +56,35 @@ class ClueEnvironment(AECEnv):
         }  # (551 actions)
 
         self.observation_spaces = {
-            i: spaces.Dict(
-                {
-                    "observation": spaces.Dict(
-                        {
-                            "step_kind": spaces.Discrete(4),  # 1x4
-                            "active players": spaces.MultiBinary(6),  # 1x6
-                            "player locations": spaces.MultiDiscrete(
-                                [205] * 6
-                            ),  # 6x205 (1230)
-                            "suggestions": spaces.MultiBinary([50, 39]),  # 50x39 (1950)
-                            # Private knowledge:
-                            "card locations": spaces.MultiBinary([6, 21]),  # 6x21 (126)
-                        }  # 1x3316 flattened
-                    ),
-                    "action_mask": spaces.MultiBinary(
-                        205 + 324 + 1 + 21
-                    ),  # (551 actions)
-                }
+            i: spaces.flatten_space(
+                spaces.Dict(
+                    {
+                        "observation": spaces.Dict(
+                            {
+                                "step_kind": spaces.Discrete(4),  # 1x4
+                                "active players": spaces.MultiBinary(6),  # 1x6
+                                "player locations": spaces.MultiDiscrete(
+                                    [205] * 6
+                                ),  # 6x205 (1230)
+                                "suggestions": spaces.MultiBinary(
+                                    [50, 39]
+                                ),  # 50x39 (1950)
+                                # Private knowledge:
+                                "card locations": spaces.MultiBinary(
+                                    [6, 21]
+                                ),  # 6x21 (126)
+                            }  # 1x3316 flattened
+                        ),
+                        "action_mask": spaces.MultiBinary(
+                            205 + 324 + 1 + 21
+                        ),  # (551 actions)
+                    }
+                )
             )
             for i in self.possible_agents
         }
 
-        self.render_mode: str | None = None
+        self.render_mode = render_mode
         self.reset()
 
     def reset(
@@ -97,8 +117,12 @@ class ClueEnvironment(AECEnv):
         knowledge = self.clue.get_player_knowledge(player_idx)
         legal = self.clue.legal_actions()
 
+        flat_knowledge = spaces.flatten(
+            knowledge
+        )  # here copy what FlattenSpaceWrapper does.
+
         return {
-            "observation": knowledge,
+            "observation": flat_knowledge,
             "action_mask": legal,
         }
 
@@ -200,10 +224,10 @@ class ClueEnvironment(AECEnv):
         if self.render_mode == "human":
             self.render()
 
-    def render(self) -> None | np.ndarray | str | list:
+    def render(self) -> Optional[Union[np.ndarray, str, list]]:
         return self.clue.render()
 
-    def seed(seed: Optional[int] = None) -> None:
+    def seed(self, seed: Optional[int] = None) -> None:
         np.random.seed(seed)
 
     def close(self) -> None:

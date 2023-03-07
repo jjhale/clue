@@ -1,6 +1,6 @@
 import random
 from enum import Enum
-from typing import Dict, List, Tuple, cast
+from typing import Dict, List, Optional, Tuple, cast
 
 import numpy as np
 
@@ -104,7 +104,7 @@ class CardState:
         self.current_step_kind_matrix = np.identity(len(StepKind), dtype=np.int8)
 
         self.game_over = False
-        self.winner: None | int = None
+        self.winner: Optional[int] = None
 
         self.what_just_happened: List[str] = []
         self.should_log_actions = log_actions
@@ -254,8 +254,8 @@ class CardState:
 
     def pick_players(self) -> List[int]:
         # You can have between 3 and 6 players:
-        num_players = random.randint(3, self.max_players)
-
+        # num_players = random.randint(3, self.max_players)
+        num_players = 6
         # Miss Scarlett always goes first, so only get to pick from the other five:
         players = [0] + random.sample(range(1, 6), k=num_players - 1)
         # Sort inplace

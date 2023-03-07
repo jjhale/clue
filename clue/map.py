@@ -1,7 +1,7 @@
 import csv
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -56,13 +56,13 @@ def load_map(filename: str = "map49.csv") -> List[List[str]]:
 
 
 def print_grid(
-    grid: List[List[str]], overlay: Dict[Tuple[int, int], str] | None = None
+    grid: List[List[str]], overlay: Optional[Dict[Tuple[int, int], str]] = None
 ) -> None:
     print(grid_string(grid, overlay))
 
 
 def grid_string(
-    grid: List[List[str]], overlay: Dict[Tuple[int, int], str] | None = None
+    grid: List[List[str]], overlay: Optional[Dict[Tuple[int, int], str]] = None
 ) -> str:
     symbols_3: Dict[str, str] = {
         "0": "\u2588\u2588\u2588",  # filled in block
@@ -113,7 +113,7 @@ class Square:
 
     i: int
     j: int
-    room: str | None
+    room: Optional[str]
     connected_squares: List[int]  # index of connected squares.
 
 
