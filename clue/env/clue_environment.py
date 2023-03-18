@@ -17,7 +17,7 @@ def env(render_mode: Optional[str] = None) -> AECEnv:
     env = ClueEnvironment(render_mode=internal_render_mode)
     if render_mode == "ansi":
         env = wrappers.CaptureStdoutWrapper(env)
-    env = wrappers.FlattenObservation(env)
+
     return env
 
 
@@ -56,30 +56,36 @@ class ClueEnvironment(AECEnv):
         }  # (551 actions)
 
         self.observation_spaces = {
-            i: spaces.flatten_space(
-                spaces.Dict(
-                    {
-                        "observation": spaces.Dict(
-                            {
-                                "step_kind": spaces.Discrete(4),  # 1x4
-                                "active players": spaces.MultiBinary(6),  # 1x6
-                                "player locations": spaces.MultiDiscrete(
-                                    [205] * 6
-                                ),  # 6x205 (1230)
-                                "suggestions": spaces.MultiBinary(
-                                    [50, 39]
-                                ),  # 50x39 (1950)
-                                # Private knowledge:
-                                "card locations": spaces.MultiBinary(
-                                    [6, 21]
-                                ),  # 6x21 (126)
-                            }  # 1x3316 flattened
-                        ),
-                        "action_mask": spaces.MultiBinary(
-                            205 + 324 + 1 + 21
-                        ),  # (551 actions)
-                    }
-                )
+            i: spaces.Dict(
+                {
+                    "observation": spaces.Dict(
+                        {
+                            "step_kind": spaces.Discrete(4),  # 1x4
+                            "active players": spaces.MultiBinary(6),  # 1x6
+                            "player locations": spaces.MultiDiscrete(
+                                [205] * 6
+                            ),  # 6x205 (1230)
+                            "suggestions": spaces.MultiBinary([50, 39]),  # 50x39 (1950)
+                            # Private knowledge:
+                            "card locations": spaces.MultiBinary([6, 21]),  # 6x21 (126)
+                        }  # 1x3316 flattened
+                    ),
+                    "action_mask": spaces.MultiBinary(
+                        205 + 324 + 1 + 21
+                    ),  # (551 actions)
+                }
+            )
+            for i in self.possible_agents
+        }
+
+        self.flat_obs_space = {
+            i: spaces.Dict(
+                {
+                    "observation": spaces.flatten_space(
+                        self.observation_spaces[i]["observation"]
+                    ),
+                    "action_mask": self.observation_spaces[i]["action_mask"],
+                }
             )
             for i in self.possible_agents
         }
@@ -118,7 +124,7 @@ class ClueEnvironment(AECEnv):
         legal = self.clue.legal_actions()
 
         flat_knowledge = spaces.flatten(
-            knowledge
+            self.observation_spaces[agent]["observation"], knowledge
         )  # here copy what FlattenSpaceWrapper does.
 
         return {
@@ -244,4 +250,4 @@ class ClueEnvironment(AECEnv):
         MUST return the same value for the same agent name
 
         """
-        return self.observation_spaces[agent]
+        return self.flat_obs_space[agent]

@@ -449,11 +449,10 @@ class CardState:
             "active players": np.concatenate(
                 (self.active_players[player_idx:6], self.active_players[0:player_idx])
             ),  # 1x6
-            "player locations": np.concatenate(
-                (
-                    self.board.player_positions[player_idx:6],
-                    self.board.player_positions[0:player_idx],
-                )
+            "player locations": np.array(
+                self.board.player_positions[player_idx:6]
+                + self.board.player_positions[0:player_idx],
+                dtype=np.int8,
             ),  # 1 x 6 each in range 0-204
             "suggestions": np.concatenate(
                 (
