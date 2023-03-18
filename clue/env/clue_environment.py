@@ -1,6 +1,6 @@
 import os
 import random
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union, cast
 
 import numpy as np
 from gymnasium import spaces
@@ -156,6 +156,9 @@ class ClueEnvironment(AECEnv):
 
         # assume that the action is legal?
         if self.clue.current_step_kind == StepKind.MOVE:
+            if action >= 205:
+                with open("test_output_crashed.txt", "w") as f:
+                    f.write(cast(str, self.render()))
             # The first 205 values represent the position output
             self.clue.move_player(action)
 

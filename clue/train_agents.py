@@ -48,7 +48,9 @@ def _get_agents(
     if agent_opponent is None:
         agent_opponent = RandomPolicy()
 
-    agents = [agent_opponent, agent_learn]
+    # agents = [agent_learn, RandomPolicy(), RandomPolicy(),
+    # RandomPolicy(), RandomPolicy(),RandomPolicy()]
+    agents = [agent_learn] * 5 + [RandomPolicy()]
     policy = MultiAgentPolicyManager(agents, env)
     return policy, optim, env.agents
 
@@ -89,19 +91,19 @@ if __name__ == "__main__":
     def save_best_fn(policy):
         model_save_path = os.path.join("log", "rps", "dqn", "policy.pth")
         os.makedirs(os.path.join("log", "rps", "dqn"), exist_ok=True)
-        torch.save(policy.policies[agents[1]].state_dict(), model_save_path)
+        torch.save(policy.policies[agents[0]].state_dict(), model_save_path)
 
     def stop_fn(mean_rewards):
         return mean_rewards >= 0.6
 
     def train_fn(epoch, env_step):
-        policy.policies[agents[1]].set_eps(0.1)
+        policy.policies[agents[0]].set_eps(0.1)
 
     def test_fn(epoch, env_step):
-        policy.policies[agents[1]].set_eps(0.05)
+        policy.policies[agents[0]].set_eps(0.05)
 
     def reward_metric(rews):
-        return rews[:, 1]
+        return rews[:, 0]
 
     # ======== Step 5: Run the trainer =========
     result = offpolicy_trainer(
@@ -124,4 +126,4 @@ if __name__ == "__main__":
 
     # return result, policy.policies[agents[1]]
     print(f"\n==========Result==========\n{result}")
-    print("\n(the trained policy can be accessed via policy.policies[agents[1]])")
+    print("\n(the trained policy can be accessed via policy.policies[agents[0]])")

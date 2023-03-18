@@ -317,7 +317,9 @@ class Board:
                 current_position=starting_point,
                 distance=throw,
             )
-
+        if not self._legal_positions_vector.any():
+            # can't move - so stay put
+            self._legal_positions_vector[initial_position] = 1
         return self._legal_positions_vector
 
     def is_in_room(self, player_idx: int) -> bool:
