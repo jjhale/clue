@@ -123,7 +123,7 @@ class CardState:
         return suggestion.ravel()
 
     @staticmethod
-    def suggestion_one_hot_decode(one_hot_index: np.int64) -> Tuple[int, int, int]:
+    def suggestion_one_hot_decode(one_hot_index: int) -> Tuple[int, int, int]:
         person, weapon, room = np.unravel_index(
             one_hot_index,
             (len(PEOPLE_CARDS), len(WEAPON_CARDS), len(ROOM_CARDS))
@@ -384,7 +384,7 @@ class CardState:
                 self.log_action(self.board.generate_board_string())
             self.next_move()
 
-    def make_accusation(self, accusation_one_hot_idx: np.ndarray) -> Optional[bool]:
+    def make_accusation(self, accusation_one_hot_idx: int) -> Optional[bool]:
         """The current player makes an accusation"""
         accuser_idx = self.current_player
 

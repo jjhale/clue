@@ -11,7 +11,7 @@ def test_suggestion_translation_one_hot() -> None:
                     person_idx=person_idx, weapon_idx=weapon_idx, room_idx=room_idx
                 )
 
-                p, w, r = CardState.suggestion_one_hot_decode(one_hot.argmax())
+                p, w, r = CardState.suggestion_one_hot_decode(int(one_hot.argmax()))
 
                 assert r == room_idx
                 assert p == person_idx
