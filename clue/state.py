@@ -255,7 +255,7 @@ class CardState:
     def pick_players(self) -> List[int]:
         # You can have between 3 and 6 players:
         # num_players = random.randint(3, self.max_players)
-        num_players = 3
+        num_players = 6
         # Miss Scarlett always goes first, so only get to pick from the other five:
         players = [0] + random.sample(range(1, 6), k=num_players - 1)
         # Sort inplace
@@ -481,6 +481,12 @@ class CardState:
             ),  # 6x21 (126)
         }
 
+    def get_knowledge_score(self, player_idx: int) -> int:
+        seen_cards = cast(
+            np.ndarray, np.any(self.player_card_knowledge[player_idx], axis=0)
+        )
+        return cast(int, seen_cards.sum())
+
     def legal_actions(self) -> np.ndarray:
         # Action space:
         #  - move positions: 1x205
@@ -499,9 +505,9 @@ class CardState:
         else:
             suggestions_or_accusations = np.zeros(
                 (
-                    len(ROOM_CARDS),
                     len(PEOPLE_CARDS),
                     len(WEAPON_CARDS),
+                    len(ROOM_CARDS),
                 ),
                 dtype=np.int8,
             )
@@ -533,9 +539,9 @@ class CardState:
     def _legal_suggestions(self) -> np.ndarray:
         suggestion = np.zeros(
             (
-                len(ROOM_CARDS),
                 len(PEOPLE_CARDS),
                 len(WEAPON_CARDS),
+                len(ROOM_CARDS),
             ),
             dtype=np.int8,
         )
@@ -547,7 +553,7 @@ class CardState:
         current_room_idx = self.board.which_room(self.current_player)
 
         # allow any combination of people and weapons in that room
-        suggestion[current_room_idx].fill(1)
+        suggestion[:, :, current_room_idx].fill(1)
 
         return suggestion
 
@@ -570,23 +576,34 @@ class CardState:
             np.ndarray, np.any(self.player_card_knowledge[self.current_player], axis=0)
         )
 
-        suggestion = np.ones(
-            (
-                len(ROOM_CARDS),
-                len(PEOPLE_CARDS),
-                len(WEAPON_CARDS),
-            ),
-            dtype=np.int8,
-        )
+        # Temporary simplification - you can only make an accusation if you are sure
+        if seen_cards.sum() == 21 - 3:  # you've only not seen three cards
+            suggestion = np.ones(
+                (
+                    len(PEOPLE_CARDS),
+                    len(WEAPON_CARDS),
+                    len(ROOM_CARDS),
+                ),
+                dtype=np.int8,
+            )
 
-        # Exclude any containing the seen people cards
-        suggestion[:, seen_cards[0:6], :] = 0
+            # Exclude any containing the seen people cards
+            suggestion[seen_cards[0:6], :, :] = 0
 
-        # Exclude seen weapons:
-        suggestion[:, :, seen_cards[6:12]] = 0
+            # Exclude seen weapons:
+            suggestion[:, seen_cards[6:12], :] = 0
 
-        # Exclude seen Rooms
-        suggestion[seen_cards[12:], :, :] = 0
+            # Exclude seen Rooms
+            suggestion[:, :, seen_cards[12:]] = 0
+        else:
+            suggestion = np.zeros(
+                (
+                    len(PEOPLE_CARDS),
+                    len(WEAPON_CARDS),
+                    len(ROOM_CARDS),
+                ),
+                dtype=np.int8,
+            )
 
         return suggestion
 

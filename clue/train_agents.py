@@ -26,7 +26,7 @@ def _get_agents(
         if isinstance(env.observation_space, gym.spaces.Dict)
         else env.observation_space
     )
-    size = 128
+    size = 1024
     if agent_learn is None:
         # model
         net = Net(
@@ -51,7 +51,7 @@ def _get_agents(
 
     # agents = [agent_learn, RandomPolicy(), RandomPolicy(),
     # RandomPolicy(), RandomPolicy(),RandomPolicy()]
-    agents = [agent_learn] * 2 + [RandomPolicy()] * 4
+    agents = [agent_learn] * 1 + [RandomPolicy()] * 5
     policy = MultiAgentPolicyManager(agents, env)
     return policy, optim, env.agents
 
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     train_collector = Collector(
         policy,
         train_envs,
-        VectorReplayBuffer(20_000, len(train_envs)),
+        VectorReplayBuffer(40_000, len(train_envs)),
         exploration_noise=True,
     )
     test_collector = Collector(policy, test_envs, exploration_noise=True)
@@ -95,10 +95,10 @@ if __name__ == "__main__":
         torch.save(policy.policies[agents[0]].state_dict(), model_save_path)
 
     def stop_fn(mean_rewards):
-        return mean_rewards >= 0.7
+        return mean_rewards >= 100
 
     def train_fn(epoch, env_step):
-        policy.policies[agents[0]].set_eps(0.1)
+        policy.policies[agents[0]].set_eps(0.2)  # exploit vs explore
 
     def test_fn(epoch, env_step):
         policy.policies[agents[0]].set_eps(0.05)
@@ -112,7 +112,7 @@ if __name__ == "__main__":
         train_collector=train_collector,
         test_collector=test_collector,
         max_epoch=50,
-        step_per_epoch=1000,
+        step_per_epoch=5000,
         step_per_collect=50,
         episode_per_test=10,
         batch_size=64,
@@ -120,7 +120,7 @@ if __name__ == "__main__":
         test_fn=test_fn,
         stop_fn=stop_fn,
         save_best_fn=save_best_fn,
-        update_per_step=0.1,
+        update_per_step=1,
         test_in_train=False,
         reward_metric=reward_metric,
     )

@@ -1,6 +1,6 @@
 import numpy as np
 
-from clue.state import CardState
+from clue.state import CardState, StepKind
 
 
 def test_suggestion_translation_one_hot() -> None:
@@ -92,3 +92,29 @@ def test_encode_suggestion_history_no_disprove() -> None:
 def test_card_state_init(map_csv_location: str) -> None:
     card_state = CardState(map_csv_location, max_players=6)
     assert card_state is not None
+
+
+def test_legal_suggestion(map_csv_location: str) -> None:
+    card_state = CardState(map_csv_location, max_players=6)
+
+    room = 0
+    # move first play to first room
+    card_state.board.move_to_room(player_idx=0, room_idx=room)
+
+    assert card_state.board.is_in_room(player_idx=0)
+    assert card_state.board.which_room(player_idx=0) == room
+
+    card_state.current_player = 0
+    card_state.current_step_kind = StepKind.SUGGESTION
+
+    legal_actions = card_state.legal_actions()
+
+    legal_suggestions = list(legal_actions[205 : (205 + 324)])
+
+    for i, val in enumerate(legal_suggestions):
+        if val:
+            _, _, room_decoded = card_state.suggestion_one_hot_decode(i)
+
+            assert room_decoded == room, (
+                "Can only make suggestion about" "the room you are in"
+            )
