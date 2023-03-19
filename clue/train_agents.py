@@ -51,7 +51,7 @@ def _get_agents(
 
     # agents = [agent_learn, RandomPolicy(), RandomPolicy(),
     # RandomPolicy(), RandomPolicy(),RandomPolicy()]
-    agents = [agent_learn] * 1 + [RandomPolicy()] * 5
+    agents = [agent_learn] * 2 + [RandomPolicy()] * 4
     policy = MultiAgentPolicyManager(agents, env)
     return policy, optim, env.agents
 

@@ -14,7 +14,7 @@ MAP_LOCATION = PARENT_DIR = os.path.dirname(os.path.abspath(__file__)) + "/../ma
 
 def env(render_mode: Optional[str] = None) -> AECEnv:
     internal_render_mode = render_mode if render_mode != "ansi" else "human"
-    env = ClueEnvironment(render_mode=internal_render_mode)
+    env = ClueEnvironment(render_mode=internal_render_mode, max_episode_steps=1000)
     if render_mode == "ansi":
         env = wrappers.CaptureStdoutWrapper(env)
 
@@ -33,6 +33,7 @@ class ClueEnvironment(AECEnv):
         self,
         max_players: int = CardState.MAX_PLAYERS,
         render_mode: Optional[str] = None,
+        max_episode_steps: int = 0,
     ) -> None:
         super().__init__()
         if max_players < 3 or max_players > CardState.MAX_PLAYERS:
@@ -47,6 +48,9 @@ class ClueEnvironment(AECEnv):
 
         self.agents = [self.possible_agents[i] for i in self.clue.players]
         self.num_suggestions = 0
+
+        self._max_episode_steps = max_episode_steps
+        self._elapsed_steps = 0
 
         # Actions
         # 205 - board positions
@@ -102,6 +106,7 @@ class ClueEnvironment(AECEnv):
         options: Optional[dict] = None,
     ) -> None:
         self.num_suggestions = 0
+        self._elapsed_steps = 0
 
         random.seed(seed)
 
@@ -233,6 +238,14 @@ class ClueEnvironment(AECEnv):
         self.agent_selection = self.possible_agents[self.clue.current_player]
 
         self._accumulate_rewards()
+
+        self._elapsed_steps = self._elapsed_steps + 1
+
+        if self._max_episode_steps and self._elapsed_steps >= self._max_episode_steps:
+            for player in self.truncations:
+                self.truncations[player] = True
+                self.rewards[player] = self.rewards[player] - 1
+
         if self.render_mode == "human":
             self.render()
 
