@@ -1,7 +1,7 @@
 import csv
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -14,17 +14,35 @@ STARTING_POINT_TO_PLAYER_CARD = {
     "spp": "Professor Plum",
 }
 
-ROOM_NAME_TO_ROOM_INDEX = {
-    "hall": 0,
-    "lounge": 1,
-    "dinning room": 2,
-    "kitchen": 3,
-    "ball room": 4,
-    "conservatory": 5,
-    "billiard room": 6,
-    "library": 7,
-    "study": 8,
+ONE_CHAR_PLAYER = ("S", "M", "W", "G", "P", "π")
+
+ROOM_NAMES = [
+    "hall",
+    "lounge",
+    "dining room",
+    "kitchen",
+    "ballroom",
+    "conservatory",
+    "billiard room",
+    "library",
+    "study",
+]
+
+# Where to display a player in a given room:
+PLAYER_ROOM_POSITIONS = {
+    "hall": (2, 10),
+    "lounge": (3, 20),
+    "dining room": (11, 20),
+    "kitchen": (20, 20),
+    "ballroom": (21, 10),
+    "conservatory": (23, 1),
+    "billiard room": (16, 1),
+    "library": (9, 1),
+    "study": (3, 1),
 }
+
+
+ROOM_NAME_TO_ROOM_INDEX = {name: idx for idx, name in enumerate(ROOM_NAMES)}
 
 
 def load_map(filename: str = "map49.csv") -> List[List[str]]:
@@ -38,8 +56,14 @@ def load_map(filename: str = "map49.csv") -> List[List[str]]:
 
 
 def print_grid(
-    grid: List[List[str]], overlay: Dict[Tuple[int, int], str] | None = None
+    grid: List[List[str]], overlay: Optional[Dict[Tuple[int, int], str]] = None
 ) -> None:
+    print(grid_string(grid, overlay))
+
+
+def grid_string(
+    grid: List[List[str]], overlay: Optional[Dict[Tuple[int, int], str]] = None
+) -> str:
     symbols_3: Dict[str, str] = {
         "0": "\u2588\u2588\u2588",  # filled in block
         "1": "[ ]",  # ""\u2591",  # Light shade block
@@ -56,8 +80,10 @@ def print_grid(
     # could get fancy here
     #  https://www.fileformat.info/info/unicode/block/box_drawing/utf8test.htm
 
+    result: List[str] = []
+
     for i, row in enumerate(grid):
-        print()
+        result.append("\n")
         for j, col in enumerate(row):
             key: str
             if col == "":
@@ -75,8 +101,10 @@ def print_grid(
                 cell = symbols_3[key][0] + overlay[(i, j)] + symbols_3[key][2]
             else:
                 cell = symbols_3[key]
-            print(cell, end="")
-    print()
+            result.append(cell)
+    result.append("\n")
+
+    return "".join(result)
 
 
 @dataclass
@@ -85,7 +113,7 @@ class Square:
 
     i: int
     j: int
-    room: str | None
+    room: Optional[str]
     connected_squares: List[int]  # index of connected squares.
 
 
@@ -131,6 +159,10 @@ class Board:
             for start_id in STARTING_POINT_TO_PLAYER_CARD
         ]
         self.player_positions = self.player_positions_initial.copy()
+        self.player_position_matrix = np.zeros(
+            (self.num_players, self.num_positions), dtype=np.int8
+        )
+        self.reset_positions()
 
         # Pre create so that we don't need to reallocate each time.
         self._legal_positions_vector = np.zeros((self.num_positions,), dtype=np.int8)
@@ -138,6 +170,8 @@ class Board:
 
     def reset_positions(self) -> None:
         self.player_positions = self.player_positions_initial.copy()
+        for player_idx, position in enumerate(self.player_positions):
+            self.player_position_matrix[player_idx][position] = 1
 
     @staticmethod
     def _is_a_square(code: str) -> bool:
@@ -178,6 +212,21 @@ class Board:
         # first entries and the door locations, followed by the
         #  locations of the squares.
         self.locations.extend(square_locations)
+
+    def set_location(self, player_idx: int, pos_idx: int) -> None:
+        # pos_idx = int(np.argmax(pos_vector))
+        if pos_idx < 0 or pos_idx >= len(self.player_position_matrix[player_idx]):
+            raise ValueError(f"Location position out of range: got {pos_idx}")
+        self.player_positions[player_idx] = pos_idx
+        self.player_position_matrix[player_idx].fill(0)
+        self.player_position_matrix[player_idx][pos_idx] = 1
+
+    def move_to_room(self, player_idx: int, room_idx: int) -> None:
+        room_name = ROOM_NAMES[room_idx]
+        door_idx = self.room_to_doors[room_name][0]
+        self.player_positions[player_idx] = door_idx
+        self.player_position_matrix[player_idx].fill(0)
+        self.player_position_matrix[player_idx][door_idx] = 1
 
     def build_secret_passages(self) -> Dict[int, int]:
         # secret passages (only works if there is one door per room)
@@ -236,7 +285,6 @@ class Board:
             self.locations[connecting_square_idx].connected_squares.append(idx)
 
     def legal_positions(self, player_idx: int, throw: int) -> np.ndarray:
-
         initial_position: int = self.player_positions[player_idx]
         # clear the legal positions
         self._legal_positions_vector.fill(0)
@@ -269,7 +317,9 @@ class Board:
                 current_position=starting_point,
                 distance=throw,
             )
-
+        if not self._legal_positions_vector.any():
+            # can't move - so stay put
+            self._legal_positions_vector[initial_position] = 1
         return self._legal_positions_vector
 
     def is_in_room(self, player_idx: int) -> bool:
@@ -305,20 +355,47 @@ class Board:
         # Unmark current location as visited
         self.visited[current_position] = 0
 
+    def generate_board_string(self) -> str:
+        overlay: Dict[Tuple[int, int], str] = {}
+        for player_idx in range(6):
+            pos: tuple[int, int]
+            if self.is_in_room(player_idx):
+                room = self.which_room(player_idx)
+                pos = PLAYER_ROOM_POSITIONS[ROOM_NAMES[room]]
+                pos = (pos[0], pos[1] + player_idx)
+            else:
+                loc_idx = self.player_positions[player_idx]
+                location = self.locations[loc_idx]
+                pos = (location.i, location.j)
+            overlay[pos] = ONE_CHAR_PLAYER[player_idx]
+
+        return grid_string(self.grid, overlay)
+
 
 if __name__ == "__main__":
     board = Board("map49.csv")
-    player_idx = 0
-    legal_positions = board.legal_positions(player_idx=player_idx, throw=6)
-    initial_pos = board.player_positions[player_idx]
-    initial_overlay = {
-        (board.locations[initial_pos].i, board.locations[initial_pos].j): "S"
-    }
-    legal_overlay = {
-        (board.locations[i].i, board.locations[i].j): "e"
-        for i, legal in enumerate(legal_positions)
-        if legal
-    }
+    # player_idx = 0
+    # legal_positions = board.legal_positions(player_idx=player_idx, throw=6)
+    # initial_pos = board.player_positions[player_idx]
+    # initial_overlay = {
+    #     (board.locations[initial_pos].i, board.locations[initial_pos].j): "S"
+    # }
+    # legal_overlay = {
+    #     (board.locations[i].i, board.locations[i].j): "e"
+    #     for i, legal in enumerate(legal_positions)
+    #     if legal
+    # }
 
-    print_grid(board.grid, {**legal_overlay, **initial_overlay})
-    print(f"Num pos: {board.num_positions}")
+    print("Starting points:")
+    board_str = board.generate_board_string()
+    print(board_str)
+
+    for room in range(6):
+        print(ROOM_NAMES[room])
+        for player in range(6):
+            board.move_to_room(player, room)
+        board_str = board.generate_board_string()
+        print(board_str)
+
+    # print_grid(board.grid, {**legal_overlay, **initial_overlay})
+    # print(f"Num pos: {board.num_positions}")

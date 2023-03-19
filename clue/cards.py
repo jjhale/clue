@@ -56,9 +56,9 @@ ROOM_CARDS = tuple(
         (
             "hall",
             "lounge",
-            "dinning room",
+            "dining room",
             "kitchen",
-            "ball room",
+            "ballroom",
             "conservatory",
             "billiard room",
             "library",
