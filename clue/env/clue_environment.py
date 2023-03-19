@@ -38,7 +38,9 @@ class ClueEnvironment(AECEnv):
         if max_players < 3 or max_players > CardState.MAX_PLAYERS:
             raise ValueError("Max players needs to be between 3 and 6 inclusive")
         self.max_players = max_players
-        self.clue = CardState(MAP_LOCATION, max_players=max_players)
+        self.clue = CardState(
+            MAP_LOCATION, max_players=max_players, log_actions=render_mode == "human"
+        )
 
         self.agent_map = {f"player_{i}": i for i in range(self.max_players)}
         self.possible_agents = list(self.agent_map.keys())
@@ -204,7 +206,7 @@ class ClueEnvironment(AECEnv):
 
             correct = self.clue.make_accusation(accusation)
 
-            if correct:
+            if correct is True:
                 self.rewards[self.agent_selection] = (
                     self.rewards[self.agent_selection] + 1
                 )
@@ -215,7 +217,7 @@ class ClueEnvironment(AECEnv):
                         if not self.clue.is_false_accuser(self.agent_map[player]):
                             self.rewards[player] = self.rewards[player] - 1
                         self.terminations[player] = True
-            else:
+            elif correct is False:
                 # We lost, but still need to stick around to tell the other players
                 # which cards we have.
                 self.rewards[self.agent_selection] = (
@@ -226,6 +228,7 @@ class ClueEnvironment(AECEnv):
                     self.terminations[self.agent_selection] = True
                     for player, terminated in self.terminations.items():
                         self.terminations[player] = True
+            # Else correct is None and they decided against making accusation
 
         self.agent_selection = self.possible_agents[self.clue.current_player]
 
@@ -234,7 +237,9 @@ class ClueEnvironment(AECEnv):
             self.render()
 
     def render(self) -> Optional[Union[np.ndarray, str, list]]:
-        return self.clue.render()
+        render_response = self.clue.render()
+        print(render_response)
+        return render_response
 
     def seed(self, seed: Optional[int] = None) -> None:
         np.random.seed(seed)

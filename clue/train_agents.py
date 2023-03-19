@@ -6,7 +6,7 @@ import gym
 import numpy as np
 import torch
 from tianshou.data import Collector, VectorReplayBuffer
-from tianshou.env import DummyVectorEnv
+from tianshou.env import SubprocVectorEnv
 from tianshou.env.pettingzoo_env import PettingZooEnv
 from tianshou.policy import BasePolicy, DQNPolicy, MultiAgentPolicyManager, RandomPolicy
 from tianshou.trainer import offpolicy_trainer
@@ -26,13 +26,14 @@ def _get_agents(
         if isinstance(env.observation_space, gym.spaces.Dict)
         else env.observation_space
     )
+    size = 128
     if agent_learn is None:
         # model
         net = Net(
             state_shape=observation_space["observation"].shape
             or observation_space["observation"].n,
             action_shape=env.action_space.shape or env.action_space.n,
-            hidden_sizes=[128, 128, 128, 128],
+            hidden_sizes=[size] * 4,
             device="cuda" if torch.cuda.is_available() else "cpu",
         ).to("cuda" if torch.cuda.is_available() else "cpu")
         if optim is None:
@@ -50,7 +51,7 @@ def _get_agents(
 
     # agents = [agent_learn, RandomPolicy(), RandomPolicy(),
     # RandomPolicy(), RandomPolicy(),RandomPolicy()]
-    agents = [agent_learn] * 5 + [RandomPolicy()]
+    agents = [agent_learn] * 1 + [RandomPolicy()] * 5
     policy = MultiAgentPolicyManager(agents, env)
     return policy, optim, env.agents
 
@@ -63,8 +64,8 @@ def _get_env():
 if __name__ == "__main__":
 
     # ======== Step 1: Environment setup =========
-    train_envs = DummyVectorEnv([_get_env for _ in range(10)])
-    test_envs = DummyVectorEnv([_get_env for _ in range(10)])
+    train_envs = SubprocVectorEnv([_get_env for _ in range(10)])
+    test_envs = SubprocVectorEnv([_get_env for _ in range(10)])
 
     # seed
     seed = 1
@@ -94,7 +95,7 @@ if __name__ == "__main__":
         torch.save(policy.policies[agents[0]].state_dict(), model_save_path)
 
     def stop_fn(mean_rewards):
-        return mean_rewards >= 0.6
+        return mean_rewards >= 0.7
 
     def train_fn(epoch, env_step):
         policy.policies[agents[0]].set_eps(0.1)

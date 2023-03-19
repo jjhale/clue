@@ -255,7 +255,7 @@ class CardState:
     def pick_players(self) -> List[int]:
         # You can have between 3 and 6 players:
         # num_players = random.randint(3, self.max_players)
-        num_players = 6
+        num_players = 3
         # Miss Scarlett always goes first, so only get to pick from the other five:
         players = [0] + random.sample(range(1, 6), k=num_players - 1)
         # Sort inplace
@@ -362,6 +362,9 @@ class CardState:
         self.board.set_location(self.current_player, new_position)
 
         if self.board.is_in_room(self.current_player):
+            # TODO: help out by not allowing same player to repeat a suggestion they
+            #  already made - if you have no legal suggestions, transition straight
+            #  to accusation.
             self.current_step_kind = StepKind.SUGGESTION
             if self.should_log_actions:
                 self.log_action(
@@ -381,7 +384,7 @@ class CardState:
                 self.log_action(self.board.generate_board_string())
             self.next_move()
 
-    def make_accusation(self, accusation_one_hot_idx: np.ndarray) -> bool:
+    def make_accusation(self, accusation_one_hot_idx: np.ndarray) -> Optional[bool]:
         """The current player makes an accusation"""
         accuser_idx = self.current_player
 
@@ -393,7 +396,7 @@ class CardState:
                 " accusation"
             )
             self.next_move()
-            return True
+            return None
 
         p, w, r = CardState.suggestion_one_hot_decode(accusation_one_hot_idx)
         correct = (
