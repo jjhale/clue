@@ -14,7 +14,7 @@ MAP_LOCATION = PARENT_DIR = os.path.dirname(os.path.abspath(__file__)) + "/../ma
 
 def env(render_mode: Optional[str] = None) -> AECEnv:
     internal_render_mode = render_mode if render_mode != "ansi" else "human"
-    env = ClueEnvironment(render_mode=internal_render_mode, max_episode_steps=1000)
+    env = ClueEnvironment(render_mode=internal_render_mode, max_episode_steps=10000)
     if render_mode == "ansi":
         env = wrappers.CaptureStdoutWrapper(env)
 
@@ -155,10 +155,12 @@ class ClueEnvironment(AECEnv):
 
         assert self.agent_selection == self.possible_agents[self.clue.current_player]
 
-        # the agent which stepped last had its _cumulative_rewards accounted for
-        # (because it was returned by last()), so the _cumulative_rewards for this
-        # agent should start again at 0
-        self._cumulative_rewards[self.agent_selection] = 0
+        # # the agent which stepped last had its _cumulative_rewards accounted for
+        # # (because it was returned by last()), so the _cumulative_rewards for this
+        # # agent should start again at 0
+        # self._cumulative_rewards[self.agent_selection] = 0
+        # for k in self._cumulative_rewards:
+        #     self._cumulative_rewards[k] = 0
         self._clear_rewards()
 
         # assume that the action is legal?
@@ -183,7 +185,7 @@ class ClueEnvironment(AECEnv):
 
             # Go around the table until someone can disprove it
             cant_disprove, can_disprove_idx = self.clue.make_suggestion(
-                room, person, weapon
+                room_idx=room, person_idx=person, weapon_idx=weapon
             )
 
             # push down the old history and store the new history
@@ -199,11 +201,30 @@ class ClueEnvironment(AECEnv):
             assert self.clue.get_last_suggestor() == suggestor_idx
 
         elif self.clue.current_step_kind == StepKind.DISPROVE_SUGGESTION:
+            suggestor_idx = self.clue.get_last_suggestor()
+            suggestors_prior_knowledge = self.clue.get_knowledge_score(suggestor_idx)
             # The card to show is in the last 21 of the action array
             self.clue.show_player_card(
                 disprover_idx=self.agent_map[self.agent_selection],
                 deck_idx=action - (205 + 324 + 1),
             )
+            suggestors_new_knowledge = self.clue.get_knowledge_score(suggestor_idx)
+            if suggestors_new_knowledge > suggestors_prior_knowledge:
+                self.clue.log_action(
+                    f"Before Setting rewards on learning old: "
+                    f"{suggestors_prior_knowledge} new {suggestors_new_knowledge} \n"
+                    f" - cum_rew {self._cumulative_rewards.values()}, \n"
+                    f" - rewards {self.rewards.values()} ."
+                )
+
+                # get points for learning something
+                suggestor_agent = self.possible_agents[suggestor_idx]
+                self.rewards[suggestor_agent] = self.rewards[suggestor_agent] + 1
+            # else:
+            #     # Get points for hiding something.
+            #     self.rewards[self.agent_selection] = (
+            #         self.rewards[self.agent_selection] + 1
+            #     )
 
         elif self.clue.current_step_kind == StepKind.ACCUSATION:
             # Check for an accusation:
@@ -212,21 +233,33 @@ class ClueEnvironment(AECEnv):
             correct = self.clue.make_accusation(accusation)
 
             if correct is True:
+                self.clue.log_action(
+                    f"Before Setting rewards on win\n "
+                    f"- cum_rew {self._cumulative_rewards.values()}, \n"
+                    f" - rewards {self.rewards.values()} ."
+                )
+
                 self.rewards[self.agent_selection] = (
-                    self.rewards[self.agent_selection] + 1
+                    self.rewards[self.agent_selection] + 100
                 )
                 self.terminations[self.agent_selection] = True
                 # remaining players just now lost - end of game
                 for player, terminated in self.terminations.items():
                     if not terminated:
                         if not self.clue.is_false_accuser(self.agent_map[player]):
-                            self.rewards[player] = self.rewards[player] - 1
+                            self.rewards[player] = self.rewards[player] - 100
                         self.terminations[player] = True
             elif correct is False:
                 # We lost, but still need to stick around to tell the other players
                 # which cards we have.
+                self.clue.log_action(
+                    f"before Setting rewards on lose\n - cum_rew "
+                    f" {self._cumulative_rewards.values()}, \n"
+                    f" - rewards {self.rewards.values()} ."
+                )
+
                 self.rewards[self.agent_selection] = (
-                    self.rewards[self.agent_selection] - 1
+                    self.rewards[self.agent_selection] - 100
                 )
                 # if everyone else is terminated then we need to terminate too
                 if self.clue.game_over:
@@ -237,14 +270,18 @@ class ClueEnvironment(AECEnv):
 
         self.agent_selection = self.possible_agents[self.clue.current_player]
 
-        self._accumulate_rewards()
-
         self._elapsed_steps = self._elapsed_steps + 1
 
         if self._max_episode_steps and self._elapsed_steps >= self._max_episode_steps:
+            self.clue.log_action(
+                f"About to truncate \n - cum_rew {self._cumulative_rewards.values()},"
+                f" \n - rewards {self.rewards.values()} ."
+            )
             for player in self.truncations:
                 self.truncations[player] = True
-                self.rewards[player] = self.rewards[player] - 1
+                self.rewards[player] = self.rewards[player] - 100
+
+        self._accumulate_rewards()
 
         if self.render_mode == "human":
             self.render()
@@ -272,3 +309,6 @@ class ClueEnvironment(AECEnv):
 
         """
         return self.flat_obs_space[agent]
+
+    def action_space(self, agent: str) -> spaces.Space:
+        return self.action_spaces[agent]

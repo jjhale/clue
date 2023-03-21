@@ -8,7 +8,7 @@ import torch
 from tianshou.data import Collector
 from tianshou.env import DummyVectorEnv
 from tianshou.env.pettingzoo_env import PettingZooEnv
-from tianshou.policy import BasePolicy, DQNPolicy, MultiAgentPolicyManager
+from tianshou.policy import BasePolicy, DQNPolicy, MultiAgentPolicyManager, RandomPolicy
 from tianshou.utils.net.common import Net
 
 from clue.env import clue_environment
@@ -27,7 +27,7 @@ def _get_agents() -> Tuple[BasePolicy, torch.optim.Optimizer, list]:
         else env.observation_space
     )
 
-    sizes = [128, 256]
+    sizes = [1024]
     policies = []
     for size in sizes:
         net = Net(
@@ -53,7 +53,8 @@ def _get_agents() -> Tuple[BasePolicy, torch.optim.Optimizer, list]:
 
     # agents = [agent_learn, RandomPolicy(), RandomPolicy(),
     # RandomPolicy(), RandomPolicy(),RandomPolicy()]
-    agents = [policies[0]] * 6  # + [policies[0]] * 2 + [RandomPolicy()] * 2
+    agents = [policies[0]] * 1 + [RandomPolicy()] * 5
+    # agents =  [RandomPolicy()] * 6
     policy = MultiAgentPolicyManager(agents, env)
     return policy, optim, env.agents
 
@@ -62,9 +63,12 @@ if __name__ == "__main__":
     env = DummyVectorEnv([partial(_get_env, render_mode="human")])
     policy, optim, agents = _get_agents()
     policy.eval()
+    print(policy.policies)
+    policy.policies["player_0"].set_eps(0.05)
     collector = Collector(policy, env, exploration_noise=False)
     result = collector.collect(n_episode=1, render=0.0001)
     rews, lens = result["rews"], result["lens"]
     print(f"Final reward: {rews[:, 0].mean()}, length: {lens.mean()}")
 
     print(rews)
+    print(lens)
