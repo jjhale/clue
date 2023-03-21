@@ -27,7 +27,7 @@ def _get_agents() -> Tuple[BasePolicy, torch.optim.Optimizer, list]:
         else env.observation_space
     )
 
-    sizes = [128]
+    sizes = [1024]
     policies = []
     for size in sizes:
         net = Net(
@@ -63,7 +63,8 @@ if __name__ == "__main__":
     env = DummyVectorEnv([partial(_get_env, render_mode="human")])
     policy, optim, agents = _get_agents()
     policy.eval()
-    policy.policies[0].set_eps(0.05)
+    print(policy.policies)
+    policy.policies["player_0"].set_eps(0.05)
     collector = Collector(policy, env, exploration_noise=False)
     result = collector.collect(n_episode=1, render=0.0001)
     rews, lens = result["rews"], result["lens"]
