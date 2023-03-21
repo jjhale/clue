@@ -38,6 +38,10 @@ using
 and 10_000 max steps in the clue env.
 
 
+## Something wrong about the rewards still
+The environment test is mad about rewards and cumulative rewards not doing something..
+Should dig into it at some point to get the test working again.
+ - [ ] fix the failing test
 
 ## move maze solving out of policy
 I should simplfiy the environment so that it just has to decide which room to
