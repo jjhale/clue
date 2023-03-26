@@ -1,4 +1,5 @@
 import csv
+import heapq
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -62,7 +63,9 @@ def print_grid(
 
 
 def grid_string(
-    grid: List[List[str]], overlay: Optional[Dict[Tuple[int, int], str]] = None
+    grid: List[List[str]],
+    overlay: Optional[Dict[Tuple[int, int], str]] = None,
+    width: int = 3,
 ) -> str:
     symbols_3: Dict[str, str] = {
         "0": "\u2588\u2588\u2588",  # filled in block
@@ -73,6 +76,21 @@ def grid_string(
         "dw": "\u258C  ",  # Left 1/8 block
         "": "   ",
     }
+    symbols_4: Dict[str, str] = {
+        "0": "\u2588\u2588\u2588\u2588",  # filled in block
+        "1": "[  ]",  # ""\u2591",  # Light shade block
+        "dn": "\u2594\u2594\u2594\u2594",  # Upper 1/8th
+        "de": "   \u2590",  # Right 1/8th
+        "ds": "\u2582\u2582\u2582\u2582",  # Lower 1/8
+        "dw": "\u258C   ",  # Left 1/8 block
+        "": "    ",
+    }
+
+    symbols_lut = {
+        3: symbols_3,
+        4: symbols_4,
+    }
+    symbols = symbols_lut[width]
 
     if overlay is None:
         overlay = {}
@@ -98,9 +116,9 @@ def grid_string(
                 key = ""
 
             if (i, j) in overlay:
-                cell = symbols_3[key][0] + overlay[(i, j)] + symbols_3[key][2]
+                cell = symbols[key][0] + overlay[(i, j)] + symbols[key][-1]
             else:
-                cell = symbols_3[key]
+                cell = symbols[key]
             result.append(cell)
     result.append("\n")
 
@@ -146,10 +164,20 @@ class Board:
             (square.i, square.j): idx for idx, square in enumerate(self.locations)
         }
 
-        self.secret_passages: Dict[int, int] = self.build_secret_passages()
-
         # Now we do the graph stuff
         self.populate_connected_squares()
+        self.build_secret_passages()
+
+        # The 209x18 - 209 positions, 9 direct distances, 9 via room
+        self.distances = np.concatenate(
+            (
+                self.build_distances(thru_room=False),
+                self.build_distances(thru_room=True),
+            ),
+            axis=1,
+        )
+
+        self.max_distance = np.max(self.distances)
 
         # Location index for each player as ordered by STARTING_POINT_TO_PLAYER_CARD
         self.player_positions_initial = [
@@ -224,24 +252,51 @@ class Board:
     def move_to_room(self, player_idx: int, room_idx: int) -> None:
         room_name = ROOM_NAMES[room_idx]
         door_idx = self.room_to_doors[room_name][0]
-        self.player_positions[player_idx] = door_idx
-        self.player_position_matrix[player_idx].fill(0)
-        self.player_position_matrix[player_idx][door_idx] = 1
+        self.set_location(player_idx, door_idx)
 
-    def build_secret_passages(self) -> Dict[int, int]:
+    def move_towards_room(self, player_idx: int, throw: int, room_idx: int) -> None:
+        legal_positions = self.legal_positions(player_idx, throw)
+        position_idxs = legal_positions.nonzero()[0]
+        if len(position_idxs) == 1:
+            self.set_location(player_idx, position_idxs[0])
+            return
+
+        direct = self.distances[position_idxs, room_idx]
+        indirect = self.distances[position_idxs, room_idx + 9]
+
+        d_min = direct.argmin()
+        if direct[d_min] == 0:
+            # if we can make it in this step go there!
+            self.set_location(player_idx, position_idxs[d_min])
+        else:
+            # take shortest route that may involve stopping off in a room:
+            i_min = indirect.argmin()
+            self.set_location(player_idx, position_idxs[i_min])
+
+    def build_secret_passages(self) -> None:
         # secret passages (only works if there is one door per room)
         corner_rooms = ("lounge", "conservatory", "study", "kitchen")
+
+        # find the unconnected doors:
         corner_doors = {
             dd.room: door_pos
             for door_pos, dd in enumerate(self.door_data)
             if dd.room in corner_rooms
+            and not self.locations[door_pos].connected_squares
         }
-        return {
-            corner_doors["lounge"]: corner_doors["conservatory"],
-            corner_doors["conservatory"]: corner_doors["lounge"],
-            corner_doors["study"]: corner_doors["kitchen"],
-            corner_doors["kitchen"]: corner_doors["study"],
+
+        # how to connect:
+        passages = {
+            "lounge": "conservatory",
+            "conservatory": "lounge",
+            "study": "kitchen",
+            "kitchen": "study",
         }
+        # wire them up
+        for room, door_idx in corner_doors.items():
+            self.locations[door_idx].connected_squares.append(
+                corner_doors[passages[room]]
+            )
 
     def populate_connected_squares(self) -> None:
         num_locations = len(self.locations)
@@ -279,19 +334,88 @@ class Board:
                 connecting_square = i + 1, j
             else:  # direction == "w":
                 connecting_square = i, j - 1
-
+            if connecting_square not in self.location_map:
+                continue  # these are the secret passage doors.
             connecting_square_idx = self.location_map[connecting_square]
             door.connected_squares.append(connecting_square_idx)
             self.locations[connecting_square_idx].connected_squares.append(idx)
 
+    def build_distances(self, thru_room: bool = False) -> np.array:
+        # for each location we want the shortest distance to each room.
+        #  initializing to a large distance.
+        distances = np.ones([len(self.locations), len(self.room_to_doors)]) * 3000
+
+        for room in self.room_to_doors:
+            room_idx = ROOM_NAME_TO_ROOM_INDEX[room]
+
+            for door_idx in self.room_to_doors[room]:
+                dist_to_room = self._build_distances_to_all_from(door_idx, thru_room)
+                distances[:, room_idx] = np.minimum(
+                    distances[:, room_idx], dist_to_room
+                )
+
+            # fix room distances - route to one door may be longer than root to another
+            for door_indicies in self.room_to_doors.values():
+                distances[door_indicies, room_idx] = distances[
+                    door_indicies, room_idx
+                ].min()
+
+        return distances
+
+    def _build_distances_to_all_from(
+        self, start_idx: int, thru_rooms: bool = False
+    ) -> np.array:
+        num_locations = len(self.locations)
+
+        visited: np.array = np.zeros(num_locations)
+        distances: np.array = np.ones(num_locations, dtype=np.int8) * 255
+        distances[start_idx] = 0
+        # the data in the heap is (distance, square_idx)
+
+        min_heap: List[Tuple[int, int]] = []
+
+        def push_to_heap(idx: int, dist: int) -> None:
+            if idx < self.num_doors and thru_rooms:
+                # Treat all doors in a room as a single node in the graph
+                #  when we want to compute distance thru rooms.
+                doors = self.room_to_doors[self.door_data[idx].room]
+                for door_idx in doors:
+                    heapq.heappush(min_heap, (dist, door_idx))
+            else:
+                heapq.heappush(min_heap, (dist, idx))
+
+        push_to_heap(start_idx, 0)
+
+        while min_heap:
+            distance, sq_idx = heapq.heappop(min_heap)
+            if visited[sq_idx]:
+                continue
+            distances[sq_idx] = distance
+            visited[sq_idx] = 1
+
+            for connected_idx in self.locations[sq_idx].connected_squares:
+                if visited[connected_idx]:
+                    continue
+                push_to_heap(connected_idx, distance + 1)
+
+        return distances
+
+    def legal_move_towards(self, player_idx: int) -> np.array:
+        legal = np.ones(len(ROOM_NAMES))
+        # cant move towards the room you are in
+        if self.is_in_room(player_idx):
+            legal[self.which_room(player_idx)] = 0
+
+        return legal
+
     def legal_positions(self, player_idx: int, throw: int) -> np.ndarray:
+        """
+        Figure out which positions a player can move to returns an indicator
+        array of all positions with 1 if it was a legal position and 0 otherwise
+        """
         initial_position: int = self.player_positions[player_idx]
         # clear the legal positions
         self._legal_positions_vector.fill(0)
-
-        # Can take secret passages
-        if initial_position in self.secret_passages:
-            self._legal_positions_vector[self.secret_passages[initial_position]] = 1
 
         # If we are in a room we can leave from either door:
         starting_points = []
@@ -328,6 +452,27 @@ class Board:
     def which_room(self, player_idx: int) -> int:
         room_name = self.door_data[self.player_positions[player_idx]].room
         return ROOM_NAME_TO_ROOM_INDEX[room_name]
+
+    def distance_to_rooms(self, pos_idx: int) -> np.array:
+        """Given a board position, return a 1x9 matrix of the min distantance from
+        the pos_id to each room in card order"""
+        return self.distances[pos_idx, 0:9]
+
+    def distance_to_rooms_thru_room(self, pos_idx: int) -> np.array:
+        """Given a board position, return a 1x9 matrix of the min distantance from
+        the pos_id to each room in card order"""
+        return self.distances[pos_idx, 9:]
+
+    def distances_after_throw(self, player_idx: int, throw: int) -> np.array:
+        """
+        For a given throw of die we find the legal positions, then calculate the
+        distances from those legal positions to each room, finally we calculate the
+        minimum distances to each room over all those legal positions.
+        """
+        legal_positions = self.legal_positions(player_idx, throw)
+        position_idxs = legal_positions.nonzero()
+
+        return np.min(self.distances[position_idxs, :], axis=1).flatten()
 
     def follow_path(
         self,
@@ -399,3 +544,19 @@ if __name__ == "__main__":
 
     # print_grid(board.grid, {**legal_overlay, **initial_overlay})
     # print(f"Num pos: {board.num_positions}")
+
+    # print out distance maps to rooms:
+
+    for room_idx in range(9):
+        print(f"\n\nRoom: {room_idx}")
+        overlay = {
+            (board.locations[i].i, board.locations[i].j): f"{int(dist):2}"
+            for i, dist in enumerate(board.distances[:, room_idx])
+        }
+        overlay_2 = {
+            (board.locations[i].i, board.locations[i].j): f"{int(dist):2}"
+            for i, dist in enumerate(board.distances[:, room_idx + 9])
+        }
+        board_str = grid_string(board.grid, overlay, width=4)
+        print(board_str)
+        print(grid_string(board.grid, overlay_2, width=4))

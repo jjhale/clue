@@ -3,11 +3,11 @@ from tianshou.data import Collector
 from tianshou.env import DummyVectorEnv, PettingZooEnv
 from tianshou.policy import MultiAgentPolicyManager, RandomPolicy
 
-from clue.env.clue_environment import ClueEnvironment
+from clue.env.clue_environment_v1 import ClueEnvironment
 
 if __name__ == "__main__":
     # Step 1: Load the PettingZoo environment
-    env = ClueEnvironment()
+    env = ClueEnvironment(render_mode="human")
 
     # Step 2: Wrap the environment for Tianshou interfacing
     env = PettingZooEnv(env)
@@ -34,4 +34,5 @@ if __name__ == "__main__":
 
     # Step 6: Execute the environment with the agents playing for 1 episode, and render
     #  a frame every 0.1 seconds
-    result = collector.collect(n_episode=1, render=0.1)
+    result = collector.collect(n_episode=1, render=0.0001)
+    print(result)

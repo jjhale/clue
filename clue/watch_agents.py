@@ -11,12 +11,12 @@ from tianshou.env.pettingzoo_env import PettingZooEnv
 from tianshou.policy import BasePolicy, DQNPolicy, MultiAgentPolicyManager, RandomPolicy
 from tianshou.utils.net.common import Net
 
-from clue.env import clue_environment
+from clue.env import clue_environment_v0
 
 
 def _get_env(render_mode=None):
     """This function is needed to provide callables for DummyVectorEnv."""
-    return PettingZooEnv(clue_environment.env(render_mode=render_mode))
+    return PettingZooEnv(clue_environment_v0.env(render_mode=render_mode))
 
 
 def _get_agents() -> Tuple[BasePolicy, torch.optim.Optimizer, list]:

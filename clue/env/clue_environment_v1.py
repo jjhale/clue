@@ -10,11 +10,17 @@ from pettingzoo.utils.env import ActionType, AECEnv, AgentID, ObsType
 from clue.state import CardState, StepKind
 
 MAP_LOCATION = PARENT_DIR = os.path.dirname(os.path.abspath(__file__)) + "/../map49.csv"
+"""
+This one should have the board maintain distances from every board position to the
+closest door of each room. Then we can use that as a proxy for the position of the
+agents and just let them choose to move towards a given room - rather than selecting
+a specific board square to land on.
+"""
 
 
 def env(render_mode: Optional[str] = None) -> AECEnv:
     internal_render_mode = render_mode if render_mode != "ansi" else "human"
-    env = ClueEnvironment(render_mode=internal_render_mode, max_episode_steps=10000)
+    env = ClueEnvironment(render_mode=internal_render_mode, max_episode_steps=1000)
     if render_mode == "ansi":
         env = wrappers.CaptureStdoutWrapper(env)
 
@@ -24,7 +30,7 @@ def env(render_mode: Optional[str] = None) -> AECEnv:
 class ClueEnvironment(AECEnv):
     metadata = {
         "render_modes": ["human"],
-        "name": "clue_v0",
+        "name": "clue_v1",
         "is_parallelizable": False,
         "render_fps": 1,
     }
@@ -53,13 +59,13 @@ class ClueEnvironment(AECEnv):
         self._elapsed_steps = 0
 
         # Actions
-        # 205 - board positions
-        # 324 - accusations or suggestion ( 9 rooms x 6people x 6 weapons)
+        # 9 - move towards rooms
+        # 324 - accusations or suggestion ( 9 rooms x 6 people x 6 weapons)
         # 1 - choose to make an accusation or not
         # 21 - which card to show accusor to disprove it
         self.action_spaces = {
-            i: spaces.Discrete(205 + 324 + 1 + 21) for i in self.possible_agents
-        }  # (551 actions)
+            i: spaces.Discrete(9 + 324 + 1 + 21) for i in self.possible_agents
+        }  # (9+324+1+21 = 355 actions)
 
         self.observation_spaces = {
             i: spaces.Dict(
@@ -68,17 +74,17 @@ class ClueEnvironment(AECEnv):
                         {
                             "step_kind": spaces.Discrete(4),  # 1x4
                             "active players": spaces.MultiBinary(6),  # 1x6
-                            "player locations": spaces.MultiDiscrete(
-                                [205] * 6
-                            ),  # 6x205 (1230)
+                            "player room distances": spaces.Box(
+                                0, 1, (6, 18)
+                            ),  # 18*6 (108)
                             "suggestions": spaces.MultiBinary([50, 39]),  # 50x39 (1950)
                             # Private knowledge:
                             "card locations": spaces.MultiBinary([6, 21]),  # 6x21 (126)
                         }  # 1x3316 flattened
                     ),
                     "action_mask": spaces.MultiBinary(
-                        205 + 324 + 1 + 21
-                    ),  # (551 actions)
+                        9 + 324 + 1 + 21
+                    ),  # (355 actions)
                 }
             )
             for i in self.possible_agents
@@ -127,7 +133,7 @@ class ClueEnvironment(AECEnv):
 
     def observe(self, agent: str) -> Optional[ObsType]:
         player_idx = self.agent_map[agent]
-        knowledge = self.clue.get_player_knowledge(player_idx)
+        knowledge = self.clue.get_player_knowledge_v1(player_idx)
         legal = self.clue.legal_actions()
 
         flat_knowledge = spaces.flatten(
@@ -148,7 +154,7 @@ class ClueEnvironment(AECEnv):
             return
 
         # Actions
-        # 205 - board positions
+        # 9 - rooms to move towards
         # 324 - accusations or suggestion ( 9 rooms x 6people x 6 weapons)
         # 1 - choose not to make an accusation
         # 21 - which card to show accusor to disprove it
@@ -158,18 +164,18 @@ class ClueEnvironment(AECEnv):
         # # the agent which stepped last had its _cumulative_rewards accounted for
         # # (because it was returned by last()), so the _cumulative_rewards for this
         # # agent should start again at 0
-        # self._cumulative_rewards[self.agent_selection] = 0
+        self._cumulative_rewards[self.agent_selection] = 0
         # for k in self._cumulative_rewards:
         #     self._cumulative_rewards[k] = 0
         self._clear_rewards()
 
         # assume that the action is legal?
         if self.clue.current_step_kind == StepKind.MOVE:
-            if action >= 205:
+            if action >= self.clue.NUM_ROOMS:
                 with open("test_output_crashed.txt", "w") as f:
                     f.write(cast(str, self.render()))
-            # The first 205 values represent the position output
-            self.clue.move_player(action)
+            # The first 9 values represent the position output
+            self.clue.move_player(action, towards_room=True)
 
         elif self.clue.current_step_kind == StepKind.SUGGESTION:
             self.num_suggestions = self.num_suggestions + 1
@@ -178,7 +184,7 @@ class ClueEnvironment(AECEnv):
                 person,
                 weapon,
                 room,
-            ) = CardState.suggestion_one_hot_decode(action - 205)
+            ) = CardState.suggestion_one_hot_decode(action - 9)
 
             # Who is the suggestor:
             suggestor_idx = self.clue.current_player
@@ -206,7 +212,7 @@ class ClueEnvironment(AECEnv):
             # The card to show is in the last 21 of the action array
             self.clue.show_player_card(
                 disprover_idx=self.agent_map[self.agent_selection],
-                deck_idx=action - (205 + 324 + 1),
+                deck_idx=action - (9 + 324 + 1),
             )
             suggestors_new_knowledge = self.clue.get_knowledge_score(suggestor_idx)
             if suggestors_new_knowledge > suggestors_prior_knowledge:
@@ -228,7 +234,7 @@ class ClueEnvironment(AECEnv):
 
         elif self.clue.current_step_kind == StepKind.ACCUSATION:
             # Check for an accusation:
-            accusation = action - 205
+            accusation = action - 9
 
             correct = self.clue.make_accusation(accusation)
 
@@ -281,6 +287,7 @@ class ClueEnvironment(AECEnv):
                 self.truncations[player] = True
                 self.rewards[player] = self.rewards[player] - 100
 
+        self._cumulative_rewards
         self._accumulate_rewards()
 
         if self.render_mode == "human":

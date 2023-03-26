@@ -47,3 +47,36 @@ and present closest to each to the move action only has 9 choices (one per room)
 can represent all positions as the 6x9 vector of distances to rooms - down from
 6x205 (1230) to 54. Include the t-1 postions too, so that we can see where folks are
 heading.
+
+
+## Something wrong about the rewards still
+The environment test is mad about rewards and cumulative rewards not doing something..
+Should dig into it at some point to get the test working again.
+ - [ ] fix the failing test
+
+## Distance maps using dijstra
+simple case since unweighted
+
+I should treat the secret passages as just doors which are unconnected, but that
+we wire up to their location.
+
+- [ ] add sp1 and sp2 to the map
+- [ ] treat as special doors.
+
+hmmm, so what about how you need to terminal inside rooms? like we should probably
+collapse doors in the same room into the same square - and add the secret passageways
+
+Maybe just include distance via rooms as one metric, and distance without allowing
+access thru doors as an input - e.g. double it there.
+
+ - [ ] calc distances treating all doors of a room as the same square
+
+ Should make distances be values between 0 and 1 (looks like max no room short cuts is
+ 31) - via rooms and not via rooms will have different scales
+
+ Could calculate the distance to a room given the current throw - then that
+ takes care of some of the decisions? i.e. for each legal position, get the min
+ distances
+
+ or could have min number of turns to get to room
+ and max number of turns to get to the room.
