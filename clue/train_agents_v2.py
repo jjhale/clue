@@ -12,7 +12,11 @@ from tianshou.policy import BasePolicy, DQNPolicy, MultiAgentPolicyManager, Rand
 from tianshou.trainer import offpolicy_trainer
 from tianshou.utils.net.common import Net
 
-from clue.env.clue_environment_v0 import env
+from clue.env.clue_environment_v2 import env
+
+FILE_PREFIX = "clue_v2"
+NET_SIZE = 1024
+MODEL_PATH = os.path.join("log", "rps", "dqn", f"policy_{FILE_PREFIX}_{NET_SIZE}.pth")
 
 
 def _get_agents(
@@ -26,14 +30,15 @@ def _get_agents(
         if isinstance(env.observation_space, gym.spaces.Dict)
         else env.observation_space
     )
-    size = 128
+
+    # check if there is a policy already:
     if agent_learn is None:
         # model
         net = Net(
             state_shape=observation_space["observation"].shape
             or observation_space["observation"].n,
             action_shape=env.action_space.shape or env.action_space.n,
-            hidden_sizes=[size] * 4,
+            hidden_sizes=[NET_SIZE] * 4,
             device="cuda" if torch.cuda.is_available() else "cpu",
         ).to("cuda" if torch.cuda.is_available() else "cpu")
         if optim is None:
@@ -45,6 +50,9 @@ def _get_agents(
             estimation_step=3,
             target_update_freq=320,
         )
+        if os.path.isfile(MODEL_PATH):
+            print(f"Loading previous state from {MODEL_PATH}")
+            agent_learn.load_state_dict(torch.load(MODEL_PATH))
 
     if agent_opponent is None:
         agent_opponent = RandomPolicy()
@@ -90,9 +98,8 @@ if __name__ == "__main__":
 
     # ======== Step 4: Callback functions setup =========
     def save_best_fn(policy):
-        model_save_path = os.path.join("log", "rps", "dqn", "policy.pth")
         os.makedirs(os.path.join("log", "rps", "dqn"), exist_ok=True)
-        torch.save(policy.policies[agents[0]].state_dict(), model_save_path)
+        torch.save(policy.policies[agents[0]].state_dict(), MODEL_PATH)
 
     def stop_fn(mean_rewards):
         return mean_rewards >= 100
@@ -113,7 +120,7 @@ if __name__ == "__main__":
         test_collector=test_collector,
         max_epoch=500,
         step_per_epoch=5000,
-        step_per_collect=50,
+        step_per_collect=500,
         episode_per_test=10,
         batch_size=64,
         train_fn=train_fn,

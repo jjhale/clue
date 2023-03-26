@@ -12,7 +12,7 @@ from tianshou.policy import BasePolicy, DQNPolicy, MultiAgentPolicyManager, Rand
 from tianshou.trainer import offpolicy_trainer
 from tianshou.utils.net.common import Net
 
-from clue.env.clue_environment_v0 import env
+from clue.env.clue_environment_v1 import env
 
 
 def _get_agents(
@@ -113,7 +113,7 @@ if __name__ == "__main__":
         test_collector=test_collector,
         max_epoch=500,
         step_per_epoch=5000,
-        step_per_collect=50,
+        step_per_collect=500,
         episode_per_test=10,
         batch_size=64,
         train_fn=train_fn,

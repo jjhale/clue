@@ -48,6 +48,7 @@ class StepKind(Enum):
 class CardState:
     MAX_PLAYERS = 6
     SEQUENCE_MEMORY = 50
+    NUM_ROOMS = len(ROOM_CARDS)
 
     def __init__(
         self, map_csv: str, max_players: int, log_actions: bool = True
@@ -358,8 +359,13 @@ class CardState:
             f"{PEOPLE_CARDS[self.current_player].name} rolled {self.current_die_roll}"
         )
 
-    def move_player(self, new_position: int) -> None:
-        self.board.set_location(self.current_player, new_position)
+    def move_player(self, new_position: int, towards_room: bool = False) -> None:
+        if towards_room:
+            self.board.move_towards_room(
+                self.current_player, self.current_die_roll, new_position
+            )
+        else:
+            self.board.set_location(self.current_player, new_position)
 
         if self.board.is_in_room(self.current_player):
             # TODO: help out by not allowing same player to repeat a suggestion they
@@ -481,6 +487,56 @@ class CardState:
             ),  # 6x21 (126)
         }
 
+    def get_player_knowledge_v1(self, player_idx: int) -> Dict:
+        # TODO: decide if we make the order consistent?
+        # want to make the order of these consistent, i.e.
+        #  The current player should be the first entry
+        #  followed by the next person in the order of player_idx.
+        #
+        # Which character you player_idx as should not really affect you
+        # set the order to start with player_idx followed by the others
+        # in order
+
+        return {
+            # Public knowledge:
+            "step_kind": self.current_step_kind.value,  # 0-3
+            "active players": np.concatenate(
+                (self.active_players[player_idx:6], self.active_players[0:player_idx])
+            ),  # 1x6
+            "player room distances": self.get_player_room_distances(
+                player_idx
+            ),  # 6 x 18
+            "suggestions": np.concatenate(
+                (
+                    self.suggestions[:, 0:21],  # pick 3 of 21
+                    # Suggestor starting with current player
+                    self.suggestions[:, 21 + player_idx : 27],
+                    self.suggestions[:, 21 : 21 + player_idx],
+                    # Can't Disprove
+                    self.suggestions[:, 27 + player_idx : 33],
+                    self.suggestions[:, 27 : 27 + player_idx],
+                    # Can disprove
+                    self.suggestions[:, 33 + player_idx : 39],
+                    self.suggestions[:, 33 : 33 + player_idx],
+                ),
+                axis=1,
+            ),  # 50x39 (1950)
+            # Private knowledge:
+            "card locations": np.concatenate(
+                (
+                    self.player_card_knowledge[player_idx, player_idx:6, :],
+                    self.player_card_knowledge[player_idx, 0:player_idx, :],
+                )
+            ),  # 6x21 (126)
+        }
+
+    def get_player_room_distances(self, player_idx: int) -> np.array:
+        locations = (
+            self.board.player_positions[player_idx:6]
+            + self.board.player_positions[0:player_idx]
+        )
+        return self.board.distances[locations, :] / self.board.max_distance
+
     def get_knowledge_score(self, player_idx: int) -> int:
         seen_cards = cast(
             np.ndarray, np.any(self.player_card_knowledge[player_idx], axis=0)
@@ -489,13 +545,13 @@ class CardState:
 
     def legal_actions(self) -> np.ndarray:
         # Action space:
-        #  - move positions: 1x205
+        #  - move positions: 1x9
         if self.current_step_kind == StepKind.MOVE:
-            legal_positions = self.board.legal_positions(
-                player_idx=self.current_player, throw=self.current_die_roll
+            legal_positions = self.board.legal_move_towards(
+                player_idx=self.current_player
             )
         else:
-            legal_positions = np.zeros(self.board.num_positions)
+            legal_positions = np.zeros(len(ROOM_CARDS))
 
         # Suggestions or accusations 9x6x6 (324)
         if self.current_step_kind == StepKind.SUGGESTION:
