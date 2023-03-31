@@ -1,5 +1,6 @@
 # type: ignore
 import os
+import time
 from typing import Optional, Tuple
 
 import gym
@@ -15,7 +16,7 @@ from tianshou.utils.net.common import Net
 from clue.env.clue_environment_v2 import env
 
 FILE_PREFIX = "clue_v2"
-NET_SIZE = 1024
+NET_SIZE = 128
 MODEL_PATH = os.path.join("log", "rps", "dqn", f"policy_{FILE_PREFIX}_{NET_SIZE}.pth")
 
 
@@ -76,7 +77,7 @@ if __name__ == "__main__":
     test_envs = SubprocVectorEnv([_get_env for _ in range(10)])
 
     # seed
-    seed = 1
+    seed = int(time.time())
     np.random.seed(seed)
     torch.manual_seed(seed)
     train_envs.seed(seed)

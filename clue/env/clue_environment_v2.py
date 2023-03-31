@@ -268,7 +268,7 @@ class ClueEnvironment(AECEnv):
             )
             for player in self.truncations:
                 self.truncations[player] = True
-                # self.rewards[player] = self.rewards[player] - 100
+                self.rewards[player] = self.rewards[player] - 100
 
         self._cumulative_rewards
         self._accumulate_rewards()
