@@ -80,3 +80,25 @@ access thru doors as an input - e.g. double it there.
 
  or could have min number of turns to get to room
  and max number of turns to get to the room.
+
+
+## Trying to get rllib to work with my environment
+
+had to downgrade protobuf, but am able to get the holdem game to run from here
+https://github.com/elliottower/PettingZoo/blob/eb3c5f0fd2c67c289bb3eaaf9cd8b3b4677d5590/tutorials/Ray/rllib_leduc_holdem.py
+
+ok so getting it to work with ray required:
+1) changing the data type of the action mask to a Box with 0,1 int8s
+2) updating the `forward` method to use FLOAT_MIN as the illegal action value
+   rather than 1e-10 which was cause lots of Illegal moves.
+
+I also set a huge epsilon, so that it would explore more.
+
+I think that i could just add in some random agents instead.
+https://docs.ray.io/en/latest/rllib/rllib-env.html#multi-agent-and-hierarchical
+
+Adding the random agents and a single learning agent results in much shorter
+episodes - mean lenght 2461. But the training agent gets down to winning zero
+of them.
+
+Note that this is using the same model as the ledic holdem tutorial.

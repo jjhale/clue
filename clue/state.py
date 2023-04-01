@@ -574,14 +574,14 @@ class CardState:
             make_accusation = 1
         else:
             make_accusation = 0
-        make_accusation_array = np.array([make_accusation])
+        make_accusation_array = np.array([make_accusation], dtype=np.int8)
 
         # disprove suggestion
         #  choosing which card to show room, weapon or person 1x21
         if self.current_step_kind == StepKind.DISPROVE_SUGGESTION:
             legal_disprove = self._legal_disprove()
         else:
-            legal_disprove = np.zeros(21)
+            legal_disprove = np.zeros(21, dtype=np.int8)
 
         return np.concatenate(
             (
@@ -590,7 +590,7 @@ class CardState:
                 make_accusation_array,
                 legal_disprove,
             )
-        )
+        ).astype(np.int8)
 
     def _legal_suggestions(self) -> np.ndarray:
         suggestion = np.zeros(

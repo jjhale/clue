@@ -401,7 +401,7 @@ class Board:
         return distances
 
     def legal_move_towards(self, player_idx: int) -> np.array:
-        legal = np.ones(len(ROOM_NAMES))
+        legal = np.ones(len(ROOM_NAMES), dtype=np.int8)
         # cant move towards the room you are in
         if self.is_in_room(player_idx):
             legal[self.which_room(player_idx)] = 0

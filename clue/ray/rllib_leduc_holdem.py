@@ -1,13 +1,17 @@
 """Uses Ray's RLLib to train agents to play Leduc Holdem.
+
 Author: Rohan (https://github.com/Rohan138)
-"""
+from https://github.com/elliottower/PettingZoo/blob/eb3c5f0fd2c67c289bb3eaaf9cd8b3b4677d5590/tutorials/Ray/rllib_leduc_holdem.py
+
+"""  # noqa: E501
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import ray
 from gymnasium.spaces import Box, Discrete
-from pettingzoo.utils.env import AECEnv
+from pettingzoo import AECEnv
+from pettingzoo.classic import leduc_holdem_v4
 from ray import tune
 from ray.rllib.algorithms.dqn import DQNConfig
 from ray.rllib.algorithms.dqn.dqn_torch_model import DQNTorchModel
@@ -16,9 +20,9 @@ from ray.rllib.models import ModelCatalog
 from ray.rllib.models.torch.fcnet import FullyConnectedNetwork as TorchFC
 from ray.rllib.utils.framework import try_import_torch
 from ray.rllib.utils.torch_utils import FLOAT_MAX
+from ray.rllib.utils.typing import ModelConfigDict
 from ray.tune.registry import register_env
-
-from clue.env import clue_environment_v2
+from torch import TensorType
 
 torch, nn = try_import_torch()
 
@@ -31,10 +35,10 @@ class TorchMaskedActions(DQNTorchModel):
         obs_space: Box,
         action_space: Discrete,
         num_outputs: int,
-        model_config: Any,
+        model_config: ModelConfigDict,
         name: str,
         **kw: Dict[str, Any],
-    ) -> None:
+    ):
         DQNTorchModel.__init__(
             self, obs_space, action_space, num_outputs, model_config, name, **kw
         )
@@ -52,7 +56,9 @@ class TorchMaskedActions(DQNTorchModel):
             name + "_action_embed",
         )
 
-    def forward(self, input_dict: Any, state: Any, seq_lens: Any) -> Any:
+    def forward(
+        self, input_dict: Dict[str, Any], state: Any, seq_lens: List[TensorType]
+    ) -> tuple:
         # Extract the available actions tensor from the observation.
         action_mask = input_dict["obs"]["action_mask"]
 
@@ -65,7 +71,7 @@ class TorchMaskedActions(DQNTorchModel):
 
         return action_logits + inf_mask, state
 
-    def value_function(self) -> Any:
+    def value_function(self) -> TensorType:
         return self.action_embed_model.value_function()
 
 
@@ -77,10 +83,10 @@ if __name__ == "__main__":
     # function that outputs the environment you wish to register.
 
     def env_creator() -> AECEnv:
-        env = clue_environment_v2.env()
+        env = leduc_holdem_v4.env()
         return env
 
-    env_name = "clue_environment_v2"
+    env_name = "leduc_holdem_v4"
     register_env(env_name, lambda config: PettingZooEnv(env_creator()))
 
     test_env = PettingZooEnv(env_creator())
@@ -101,10 +107,6 @@ if __name__ == "__main__":
             policies={
                 "player_0": (None, obs_space, act_space, {}),
                 "player_1": (None, obs_space, act_space, {}),
-                "player_2": (None, obs_space, act_space, {}),
-                "player_3": (None, obs_space, act_space, {}),
-                "player_4": (None, obs_space, act_space, {}),
-                "player_5": (None, obs_space, act_space, {}),
             },
             policy_mapping_fn=(lambda agent_id, *args, **kwargs: agent_id),
         )
