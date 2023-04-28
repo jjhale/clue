@@ -36,6 +36,6 @@ repos: # hooks for everything
           - "--ignore=E203,W503"
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v0.982
+    rev: v1.2.0
     hooks:
       - id: mypy

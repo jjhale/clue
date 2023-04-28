@@ -535,7 +535,9 @@ class CardState:
             self.board.player_positions[player_idx:6]
             + self.board.player_positions[0:player_idx]
         )
-        return self.board.distances[locations, :] / self.board.max_distance
+        return cast(
+            np.ndarray, self.board.distances[locations, :] / self.board.max_distance
+        )
 
     def get_knowledge_score(self, player_idx: int) -> int:
         seen_cards = cast(

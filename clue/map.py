@@ -2,7 +2,7 @@ import csv
 import heapq
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, cast
 
 import numpy as np
 
@@ -456,12 +456,12 @@ class Board:
     def distance_to_rooms(self, pos_idx: int) -> np.ndarray:
         """Given a board position, return a 1x9 matrix of the min distantance from
         the pos_id to each room in card order"""
-        return self.distances[pos_idx, 0:9]
+        return cast(np.ndarray, self.distances[pos_idx, 0:9])
 
     def distance_to_rooms_thru_room(self, pos_idx: int) -> np.ndarray:
         """Given a board position, return a 1x9 matrix of the min distantance from
         the pos_id to each room in card order"""
-        return self.distances[pos_idx, 9:]
+        return cast(np.ndarray, self.distances[pos_idx, 9:])
 
     def distances_after_throw(self, player_idx: int, throw: int) -> np.ndarray:
         """
@@ -472,7 +472,9 @@ class Board:
         legal_positions = self.legal_positions(player_idx, throw)
         position_idxs = legal_positions.nonzero()
 
-        return np.min(self.distances[position_idxs, :], axis=1).flatten()
+        return cast(
+            np.ndarray, np.min(self.distances[position_idxs, :], axis=1).flatten()
+        )
 
     def follow_path(
         self,
