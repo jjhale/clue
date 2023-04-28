@@ -340,7 +340,7 @@ class Board:
             door.connected_squares.append(connecting_square_idx)
             self.locations[connecting_square_idx].connected_squares.append(idx)
 
-    def build_distances(self, thru_room: bool = False) -> np.array:
+    def build_distances(self, thru_room: bool = False) -> np.ndarray:
         # for each location we want the shortest distance to each room.
         #  initializing to a large distance.
         distances = np.ones([len(self.locations), len(self.room_to_doors)]) * 3000
@@ -364,11 +364,11 @@ class Board:
 
     def _build_distances_to_all_from(
         self, start_idx: int, thru_rooms: bool = False
-    ) -> np.array:
+    ) -> np.ndarray:
         num_locations = len(self.locations)
 
-        visited: np.array = np.zeros(num_locations)
-        distances: np.array = np.ones(num_locations, dtype=np.int8) * 255
+        visited: np.ndarray = np.zeros(num_locations)
+        distances: np.ndarray = np.ones(num_locations, dtype=np.int8) * 255
         distances[start_idx] = 0
         # the data in the heap is (distance, square_idx)
 
@@ -400,7 +400,7 @@ class Board:
 
         return distances
 
-    def legal_move_towards(self, player_idx: int) -> np.array:
+    def legal_move_towards(self, player_idx: int) -> np.ndarray:
         legal = np.ones(len(ROOM_NAMES))
         # cant move towards the room you are in
         if self.is_in_room(player_idx):
@@ -453,17 +453,17 @@ class Board:
         room_name = self.door_data[self.player_positions[player_idx]].room
         return ROOM_NAME_TO_ROOM_INDEX[room_name]
 
-    def distance_to_rooms(self, pos_idx: int) -> np.array:
+    def distance_to_rooms(self, pos_idx: int) -> np.ndarray:
         """Given a board position, return a 1x9 matrix of the min distantance from
         the pos_id to each room in card order"""
         return self.distances[pos_idx, 0:9]
 
-    def distance_to_rooms_thru_room(self, pos_idx: int) -> np.array:
+    def distance_to_rooms_thru_room(self, pos_idx: int) -> np.ndarray:
         """Given a board position, return a 1x9 matrix of the min distantance from
         the pos_id to each room in card order"""
         return self.distances[pos_idx, 9:]
 
-    def distances_after_throw(self, player_idx: int, throw: int) -> np.array:
+    def distances_after_throw(self, player_idx: int, throw: int) -> np.ndarray:
         """
         For a given throw of die we find the legal positions, then calculate the
         distances from those legal positions to each room, finally we calculate the

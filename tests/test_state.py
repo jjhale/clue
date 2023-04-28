@@ -109,12 +109,12 @@ def test_legal_suggestion(map_csv_location: str) -> None:
 
     legal_actions = card_state.legal_actions()
 
-    legal_suggestions = list(legal_actions[205 : (205 + 324)])
+    legal_suggestions = list(legal_actions[9 : (9 + 324)])
 
     for i, val in enumerate(legal_suggestions):
         if val:
             _, _, room_decoded = card_state.suggestion_one_hot_decode(i)
 
-            assert room_decoded == room, (
-                "Can only make suggestion about" "the room you are in"
-            )
+            assert (
+                room_decoded == room
+            ), "Can only make suggestion about the room you are in"

@@ -10,7 +10,7 @@ def test_distances_after_throw(map_csv_location: str) -> None:
     board = Board(map_csv_location)
     assert board is not None
     result = board.distances_after_throw(0, 1)
-    assert result.shape == (1, 9)
+    assert result.shape == (18,)
 
 
 def test_move_towards_room(map_csv_location: str) -> None:

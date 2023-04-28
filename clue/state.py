@@ -530,7 +530,7 @@ class CardState:
             ),  # 6x21 (126)
         }
 
-    def get_player_room_distances(self, player_idx: int) -> np.array:
+    def get_player_room_distances(self, player_idx: int) -> np.ndarray:
         locations = (
             self.board.player_positions[player_idx:6]
             + self.board.player_positions[0:player_idx]

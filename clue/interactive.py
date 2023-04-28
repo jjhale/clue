@@ -2,13 +2,13 @@ import datetime
 import logging
 
 import numpy as np
-from env import clue_environment_v2
-from env.clue_environment_v2 import ClueEnvironment
 
+from clue.env import clue_environment_v2
+from clue.env.clue_environment_v2 import ClueEnvironment
 from clue.state import CardState
 
 
-def choose_action(legal: np.ndarray) -> np.ndarray:
+def choose_action(legal: np.ndarray) -> int:
     chosen_action = np.zeros(len(legal))
     actions = ClueEnvironment.legal_action2human(legal)
 
@@ -63,7 +63,7 @@ def choose_action(legal: np.ndarray) -> np.ndarray:
             i = d.get(res[0], 9999999) + int(res[1])
             chosen_action[9 + 324 + 1 + i] = 1
 
-    return chosen_action.argmax()
+    return int(chosen_action.argmax())
 
 
 if __name__ == "__main__":
@@ -81,6 +81,10 @@ if __name__ == "__main__":
                 print(f"Game over in {env._elapsed_steps} steps.")
 
                 break
+            if obs is None:
+                print("Obs was None - giving up")
+                break
+
             mask = obs["action_mask"]
             if agent == "player_0":
                 print(f"agent: {agent}")
@@ -98,7 +102,8 @@ if __name__ == "__main__":
                 action = np.random.choice(choices)
             f.write(f"agent: {agent}\n")
             f.write(f"iteration {env._elapsed_steps}\n")
-            f.write(data)
+
+            f.write(str(data))
             f.write(o2h)
             f.write(f"\n{agent} chose {action}\n")
 
