@@ -530,12 +530,14 @@ class CardState:
             ),  # 6x21 (126)
         }
 
-    def get_player_room_distances(self, player_idx: int) -> np.array:
+    def get_player_room_distances(self, player_idx: int) -> np.ndarray:
         locations = (
             self.board.player_positions[player_idx:6]
             + self.board.player_positions[0:player_idx]
         )
-        return self.board.distances[locations, :] / self.board.max_distance
+        return cast(
+            np.ndarray, self.board.distances[locations, :] / self.board.max_distance
+        )
 
     def get_knowledge_score(self, player_idx: int) -> int:
         seen_cards = cast(
@@ -625,16 +627,15 @@ class CardState:
     def _legal_accusation(self) -> np.ndarray:
         # Don't need to be in the room to make the accusation and so can always
         # make any accusation.
-        #
         # Forcing it not to make any accusation
         #   which includes any cards that it has seen
         seen_cards = cast(
             np.ndarray, np.any(self.player_card_knowledge[self.current_player], axis=0)
         )
 
-        # Temporary simplification - you can only make an accusation if you are sure
-        if seen_cards.sum() == 21 - 3:  # you've only not seen three cards
-            suggestion = np.ones(
+        if self.current_player != 0 and seen_cards.sum() < (21 - 3):
+            # assume non 0 players are using random policy
+            return np.zeros(
                 (
                     len(PEOPLE_CARDS),
                     len(WEAPON_CARDS),
@@ -643,23 +644,23 @@ class CardState:
                 dtype=np.int8,
             )
 
-            # Exclude any containing the seen people cards
-            suggestion[seen_cards[0:6], :, :] = 0
+        suggestion = np.ones(
+            (
+                len(PEOPLE_CARDS),
+                len(WEAPON_CARDS),
+                len(ROOM_CARDS),
+            ),
+            dtype=np.int8,
+        )
 
-            # Exclude seen weapons:
-            suggestion[:, seen_cards[6:12], :] = 0
+        # Exclude any containing the seen people cards
+        suggestion[seen_cards[0:6], :, :] = 0
 
-            # Exclude seen Rooms
-            suggestion[:, :, seen_cards[12:]] = 0
-        else:
-            suggestion = np.zeros(
-                (
-                    len(PEOPLE_CARDS),
-                    len(WEAPON_CARDS),
-                    len(ROOM_CARDS),
-                ),
-                dtype=np.int8,
-            )
+        # Exclude seen weapons:
+        suggestion[:, seen_cards[6:12], :] = 0
+
+        # Exclude seen Rooms
+        suggestion[:, :, seen_cards[12:]] = 0
 
         return suggestion
 

@@ -80,3 +80,14 @@ access thru doors as an input - e.g. double it there.
 
  or could have min number of turns to get to room
  and max number of turns to get to the room.
+
+
+2023-04-28
+
+Running in interactive mode I was able to win in 398 total steps by focusing on just
+exploring each room first, then the people and weapons. I ignored other peoples
+suggestions. So setting a max of 500 steps seems like a reasonable upper limit for a
+simple approach.
+
+Steps: 398
+Total suggestions: 71

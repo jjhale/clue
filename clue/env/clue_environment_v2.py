@@ -1,6 +1,6 @@
 import os
 import random
-from typing import Any, Dict, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 from gymnasium import spaces
@@ -22,7 +22,7 @@ No partial points - winner takes all at the end
 
 def env(render_mode: Optional[str] = None) -> AECEnv:
     internal_render_mode = render_mode if render_mode != "ansi" else "human"
-    env = ClueEnvironment(render_mode=internal_render_mode, max_episode_steps=4000)
+    env = ClueEnvironment(render_mode=internal_render_mode, max_episode_steps=500)
     if render_mode == "ansi":
         env = wrappers.CaptureStdoutWrapper(env)
 
@@ -42,13 +42,16 @@ class ClueEnvironment(AECEnv):
         max_players: int = CardState.MAX_PLAYERS,
         render_mode: Optional[str] = None,
         max_episode_steps: int = 0,
+        log_actions: bool = False,
     ) -> None:
         super().__init__()
         if max_players < 3 or max_players > CardState.MAX_PLAYERS:
             raise ValueError("Max players needs to be between 3 and 6 inclusive")
         self.max_players = max_players
         self.clue = CardState(
-            MAP_LOCATION, max_players=max_players, log_actions=render_mode == "human"
+            MAP_LOCATION,
+            max_players=max_players,
+            log_actions=(render_mode == "human") or log_actions,
         )
 
         self.agent_map = {f"player_{i}": i for i in range(self.max_players)}
@@ -106,6 +109,111 @@ class ClueEnvironment(AECEnv):
 
         self.render_mode = render_mode
         self.reset()
+
+    @staticmethod
+    def legal_action2human(legal: np.ndarray) -> Dict[str, np.ndarray]:
+        # 9 - move towards rooms
+        # 324 - accusations or suggestion ( 6 people x 6 weapons x 9 rooms )
+        # 1 - choose to make an accusation or not
+        # 21 - which card to show accusor to disprove it
+        result = {
+            "moves": legal[0:9],
+            "sug_or_acc": np.zeros(21),
+            "make_accusation": legal[9 + 324 : 9 + 324 + 1],
+            "show_card": legal[9 + 324 + 1 : 324 + 9 + 1 + 21],
+        }
+
+        # Collapse the suggestions into a deck vector.
+        if legal[9 : 324 + 9].any():
+            suggestion_legal = legal[9 : 324 + 9].reshape((6, 6, 9))
+            people = suggestion_legal.any(axis=(1, 2))
+            weapons = suggestion_legal.any(axis=(0, 2))
+            rooms = suggestion_legal.any(axis=(0, 1))
+
+            result["sug_or_acc"] = np.concatenate([people, weapons, rooms])
+
+        return result
+
+    @staticmethod
+    def observation2human(obs: np.ndarray) -> str:
+        # probably sorted alphabetically by key?!?
+        # ['active players', 'card locations',
+        # 'player room distances', 'step_kind', 'suggestions']
+
+        active_players = obs[0:6]
+        card_locations = obs[6 : 6 + 126].reshape((6, 21))  # 6x21
+        distances = obs[6 + 126 : 6 + 126 + 108].reshape((6, 18))  # 6x18
+        step_kind = obs[6 + 126 + 108 : 6 + 126 + 108 + 4]
+        suggestions = obs[6 + 126 + 108 + 4 : 6 + 126 + 108 + 4 + 1950].reshape(
+            (50, 39)
+        )  # 50x39
+
+        summary: List[str] = []
+        summary.append(f"Total players = {sum(active_players)}")
+
+        # What cards am I holding?
+        #     People      Weapons     Room
+        #     0 1 2 3 4 5 0 1 2 3 4 5 0 1 2 3 4 5 6 7 8
+        # me
+        #  1
+        #  2
+        #  3
+        #  4
+        #  5
+        deck_lut = list(range(6)) + list(range(6)) + list(range(9))
+        summary.append("Your Cards:")
+        summary.append("    People      Weapons     Room")
+        summary.append("    0 1 2 3 4 5 0 1 2 3 4 5 0 1 2 3 4 5 6 7 8 ")
+        for i in range(6):
+            checks = [
+                str(deck_lut[j]) if x else " " for j, x in enumerate(card_locations[i])
+            ]
+            summary.append(f"{i}   " + " ".join(checks))
+
+        summary.append("Distance to rooms (direct:via rooms)")
+        #     0         1 ....
+        summary.append("    " + "".join([f"{r}          " for r in range(9)]))
+        # 0   0.03:0.02
+        for i in range(6):
+            ds = [f"{distances[i,j]:.2f}:{distances[i, j+9]:.2f}  " for j in range(9)]
+            summary.append(f"{i}   " + "".join(ds))
+
+        summary.append("")
+        summary.append(f"Step kind: {StepKind(step_kind.argmax()).name}")
+
+        # Suggestion history
+        # s[0:21] - DECK vector pick 3,  n=21
+        # s[21:27]- the suggestor pick 1,  n=6
+        # s[27:33] can't disprove  pick all that apply, n=6
+        # s[33:39]- can disprove - pick 0 or 1, n=6
+        summary.append("")
+        summary.append("Suggestions:")
+        #     |People      Weapons     Room              | Can't disp  |
+        # By  |0 1 2 3 4 5 0 1 2 3 4 5 0 1 2 3 4 5 6 7 8 | 0 1 2 3 4 5 | Disprover
+        summary.append("    |People      Weapons     Room              | Can't disp  |")
+        summary.append(
+            "By  |0 1 2 3 4 5 0 1 2 3 4 5 0 1 2 3 4 5 6 7 8 | 0 1 2 3 4 5 | Disprover"
+        )
+
+        for i in range(50):
+            if not suggestions[i, :].any():
+                continue
+            by = suggestions[i, 21:27].argmax()
+            deck = [
+                str(deck_lut[j]) if x else " "
+                for j, x in enumerate(suggestions[i, 0:21])
+            ]
+            cant = ["x" if x else " " for x in suggestions[i, 27:33]]
+            if suggestions[i, 33:39].any():
+                disprover = f"disproved by {suggestions[i, 33:39].argmax()}"
+            else:
+                disprover = ""
+            summary.append(
+                f" {by}  |" + " ".join(deck) + f" | {' '.join(cant)} | {disprover}"
+            )
+
+        result = "\n".join(summary)
+        return result
 
     def reset(
         self,

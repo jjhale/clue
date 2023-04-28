@@ -19,3 +19,13 @@ Install the git hooks:
 ```shell
 poetry run pre-commit install
 ```
+
+
+# Interactive mode
+You can check out what a policy would experience by running the interactive script:
+
+```
+poetry run python clue/interactive.py
+```
+
+It will create a log of the session in a file called `interactive.<timestamp>.log`
