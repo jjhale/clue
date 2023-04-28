@@ -250,9 +250,6 @@ class ClueEnvironment(AECEnv):
             self.observation_spaces[agent]["observation"], knowledge
         )  # here copy what FlattenSpaceWrapper does.
 
-        tmp_test = self.observation2human(flat_knowledge)
-        assert tmp_test
-
         return {
             "observation": flat_knowledge,
             "action_mask": legal,
