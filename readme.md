@@ -1,3 +1,29 @@
+# Clue
+
+This repo implements an environment for the board game Clue that can be used
+to train a reinforcement learning agent to play the game.
+
+It uses the OpenAI gym interface and petting zoo to represent clue as a
+multi-agent reinforcement learning problem.
+
+The key files are:
+ - `clue/env/clue_environment_<version>.py` - The environment.
+ - `clue/map.py` - The map of the board and utility functions for working with it.
+ - `clue/map49.csv` - A csv representation of the board from the 1949 rules
+ - `clue/state.py` - The logic of the game and the state representation.
+ - `clue/train_agents_<version>.py` - different attemps to train agents to play the game.
+ - `clue/interactive.py` - A script to play the game interactively against a trained agent.
+
+# Current status
+
+The environment captures the rules of the game ok, but the trained agents
+don't play very well.
+
+I've tried a few different approaches to training agents, but none of them
+are much better than random.
+
+I suspect that there is a problem with my training setup or model architecture.
+
 # Map
 
 A csv file represents the board layout.
