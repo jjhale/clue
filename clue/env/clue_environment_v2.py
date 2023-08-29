@@ -230,8 +230,8 @@ class ClueEnvironment(AECEnv):
 
         # The standard AEC variables
         self.agents = [self.possible_agents[i] for i in self.clue.players]
-        self.rewards = {i: 0 for i in self.agents}
-        self._cumulative_rewards = {i: 0 for i in self.agents}
+        self.rewards = {i: 0.0 for i in self.agents}
+        self._cumulative_rewards = {i: 0.0 for i in self.agents}
         self.terminations = {i: False for i in self.agents}
         self.truncations = {i: False for i in self.agents}
         self.infos: Dict[str, Dict] = {i: {} for i in self.agents}
@@ -286,6 +286,8 @@ class ClueEnvironment(AECEnv):
                     f.write(cast(str, self.render()))
             # The first 9 values represent the position output
             self.clue.move_player(action, towards_room=True)
+            if self.clue.board.is_in_room(self.clue.current_player):
+                self.rewards[self.possible_agents[self.clue.current_player]] += 1
 
         elif self.clue.current_step_kind == StepKind.SUGGESTION:
             self.num_suggestions = self.num_suggestions + 1
@@ -318,11 +320,30 @@ class ClueEnvironment(AECEnv):
 
         elif self.clue.current_step_kind == StepKind.DISPROVE_SUGGESTION:
             suggestor_idx = self.clue.get_last_suggestor()
+            suggestors_prior_knowledge = self.clue.get_knowledge_score(suggestor_idx)
             # The card to show is in the last 21 of the action array
             self.clue.show_player_card(
                 disprover_idx=self.agent_map[self.agent_selection],
                 deck_idx=action - (9 + 324 + 1),
             )
+            suggestors_new_knowledge = self.clue.get_knowledge_score(suggestor_idx)
+            if suggestors_new_knowledge > suggestors_prior_knowledge:
+                self.clue.log_action(
+                    f"Before Setting rewards on learning old: "
+                    f"{suggestors_prior_knowledge} new {suggestors_new_knowledge} \n"
+                    f" - cum_rew {self._cumulative_rewards.values()}, \n"
+                    f" - rewards {self.rewards.values()} ."
+                )
+
+                # get points for learning something
+                suggestor_agent = self.possible_agents[suggestor_idx]
+                self.rewards[suggestor_agent] = self.rewards[suggestor_agent] + 10.0
+            else:
+                # Get points for hiding something.
+                self.rewards[self.agent_selection] = (
+                    self.rewards[self.agent_selection] + 0.1
+                )
+                pass
 
         elif self.clue.current_step_kind == StepKind.ACCUSATION:
             # Check for an accusation:
@@ -344,7 +365,7 @@ class ClueEnvironment(AECEnv):
                 # remaining players just now lost - end of game
                 for player, terminated in self.terminations.items():
                     if not terminated:
-                        self.rewards[player] = self.rewards[player] - 100
+                        # self.rewards[player] = self.rewards[player] - 100
                         self.terminations[player] = True
             elif correct is False:
                 # We lost, but still need to stick around to tell the other players
@@ -355,14 +376,18 @@ class ClueEnvironment(AECEnv):
                     f" - rewards {self.rewards.values()} ."
                 )
 
+                self.rewards[self.agent_selection] = (
+                    self.rewards[self.agent_selection] - 1
+                )
+                self.terminations[self.agent_selection] = True
                 # if everyone else is terminated then we need to terminate too
                 if self.clue.game_over:
                     self.terminations[self.agent_selection] = True
                     for player, terminated in self.terminations.items():
                         self.terminations[player] = True
-                        self.rewards[self.agent_selection] = (
-                            self.rewards[self.agent_selection] - 100
-                        )
+                        # self.rewards[self.agent_selection] = (
+                        #     self.rewards[self.agent_selection] - 100
+                        # )
             # Else correct is None and they decided against making accusation
 
         self.agent_selection = self.possible_agents[self.clue.current_player]
@@ -376,7 +401,7 @@ class ClueEnvironment(AECEnv):
             )
             for player in self.truncations:
                 self.truncations[player] = True
-                self.rewards[player] = self.rewards[player] - 100
+                # self.rewards[player] = self.rewards[player] - 100
 
         self._cumulative_rewards
         self._accumulate_rewards()

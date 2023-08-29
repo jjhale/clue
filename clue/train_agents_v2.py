@@ -16,8 +16,11 @@ from tianshou.utils.net.common import Net
 from clue.env.clue_environment_v2 import env
 
 FILE_PREFIX = "clue_v2"
-NET_SIZE = 128
-MODEL_PATH = os.path.join("log", "rps", "dqn", f"policy_{FILE_PREFIX}_{NET_SIZE}.pth")
+NET_SIZE = 512
+LAYERS = 10
+MODEL_PATH = os.path.join(
+    "log", "rps", "dqn", f"policy_{FILE_PREFIX}_{NET_SIZE}_{LAYERS}.pth"
+)
 
 
 def _get_agents(
@@ -39,7 +42,7 @@ def _get_agents(
             state_shape=observation_space["observation"].shape
             or observation_space["observation"].n,
             action_shape=env.action_space.shape or env.action_space.n,
-            hidden_sizes=[NET_SIZE] * 4,
+            hidden_sizes=[NET_SIZE] * LAYERS,
             device="cuda" if torch.cuda.is_available() else "cpu",
         ).to("cuda" if torch.cuda.is_available() else "cpu")
         if optim is None:
@@ -103,7 +106,7 @@ if __name__ == "__main__":
         torch.save(policy.policies[agents[0]].state_dict(), MODEL_PATH)
 
     def stop_fn(mean_rewards):
-        return mean_rewards >= 100
+        return mean_rewards >= 230
 
     def train_fn(epoch, env_step):
         policy.policies[agents[0]].set_eps(0.2)  # exploit vs explore

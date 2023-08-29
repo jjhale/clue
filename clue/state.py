@@ -633,7 +633,7 @@ class CardState:
             np.ndarray, np.any(self.player_card_knowledge[self.current_player], axis=0)
         )
 
-        if self.current_player != 0 and seen_cards.sum() < (21 - 3):
+        if seen_cards.sum() < (21 - 3):
             # assume non 0 players are using random policy
             return np.zeros(
                 (

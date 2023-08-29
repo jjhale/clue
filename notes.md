@@ -91,3 +91,8 @@ simple approach.
 
 Steps: 398
 Total suggestions: 71
+
+2023-05-02
+963k steps and it is getting a reward of 117 , best result was at round #45 and
+currently on round #193
+best_reward: 117.300000 ± 15.648131 in #45
